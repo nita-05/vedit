@@ -87,7 +87,7 @@ export async function GET(request: NextRequest) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error'
         
         // Provide helpful troubleshooting tips based on error
-        let troubleshootingTips = []
+        let troubleshootingTips: string[] = []
         if (errorMessage.includes('authentication failed') || errorMessage.includes('bad auth')) {
           troubleshootingTips = [
             'Verify username and password in your connection string',
