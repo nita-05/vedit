@@ -61,7 +61,7 @@ export async function GET(request: NextRequest) {
 
     if (tokenProject) {
       // Update existing token project
-      await updateProject(tokenProject._id || tokenProject.id, {
+      await updateProject(tokenProject.id || '', {
         projectData: {
           type: 'platformTokens',
           tokens: {
