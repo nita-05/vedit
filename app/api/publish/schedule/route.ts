@@ -40,9 +40,16 @@ export async function POST(req: NextRequest) {
     }
 
     // Save to user's projects
-    await saveProject(session.user.email, {
-      type: 'scheduled_post',
-      scheduledPost,
+    await saveProject({
+      userId: session.user.email,
+      projectData: {
+        type: 'scheduled_post',
+        scheduledPost,
+      },
+      videoPublicId: videoPublicId || '',
+      chatHistory: [],
+      createdAt: new Date(),
+      updatedAt: new Date(),
     })
 
     // In production, you would set up a cron job or queue system (e.g., Bull, Agenda.js)
