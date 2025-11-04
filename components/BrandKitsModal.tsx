@@ -60,12 +60,12 @@ export default function BrandKitsModal({ isOpen, onClose, onSelectKit, onApplyKi
 
   const handleUploadLogo = async (file: File) => {
     try {
-      const formData = new FormData()
-      formData.append('file', file)
+      const uploadFormData = new FormData()
+      uploadFormData.append('file', file)
 
       const response = await fetch('/api/upload', {
         method: 'POST',
-        body: formData,
+        body: uploadFormData,
       })
 
       const data = await response.json()
@@ -80,12 +80,12 @@ export default function BrandKitsModal({ isOpen, onClose, onSelectKit, onApplyKi
 
   const handleUploadWatermark = async (file: File) => {
     try {
-      const formData = new FormData()
-      formData.append('file', file)
+      const uploadFormData = new FormData()
+      uploadFormData.append('file', file)
 
       const response = await fetch('/api/upload', {
         method: 'POST',
-        body: formData,
+        body: uploadFormData,
       })
 
       const data = await response.json()
