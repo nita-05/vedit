@@ -5,6 +5,7 @@ import { updateProject, getProjects } from '@/lib/db'
 import { publishToPlatform, PublishingConfig } from '@/lib/publishing'
 
 export async function POST(request: NextRequest) {
+  let platform = 'platform' // Default for error handling
   try {
     const session = await getServerSession(authOptions)
     
@@ -13,9 +14,10 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { platform, videoUrl, title, description, videoPublicId, projectId, accessToken, refreshToken, visibility, tags } = body
+    platform = body.platform || 'platform' // Extract platform for error handling
+    const { videoUrl, title, description, videoPublicId, projectId, accessToken, refreshToken, visibility, tags } = body
 
-    if (!platform || !videoUrl) {
+    if (!body.platform || !videoUrl) {
       return NextResponse.json(
         { error: 'Platform and video URL are required' },
         { status: 400 }
@@ -29,9 +31,9 @@ export async function POST(request: NextRequest) {
 
     // Prepare publishing config
     const publishConfig: PublishingConfig = {
-      platform: platform.toLowerCase() as any,
-      accessToken: accessToken || storedTokens[platform.toLowerCase()]?.accessToken,
-      refreshToken: refreshToken || storedTokens[platform.toLowerCase()]?.refreshToken,
+      platform: body.platform.toLowerCase() as any,
+      accessToken: accessToken || storedTokens[body.platform.toLowerCase()]?.accessToken,
+      refreshToken: refreshToken || storedTokens[body.platform.toLowerCase()]?.refreshToken,
       videoUrl,
       title: title || 'My Video',
       description: description || '',
@@ -44,8 +46,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: false,
         requiresAuth: true,
-        message: `Please connect your ${platform} account first. Click "Connect Account" to authorize.`,
-        oauthUrl: getOAuthUrl(platform.toLowerCase()),
+        message: `Please connect your ${body.platform} account first. Click "Connect Account" to authorize.`,
+        oauthUrl: getOAuthUrl(body.platform.toLowerCase()),
       })
     }
 
@@ -58,8 +60,8 @@ export async function POST(request: NextRequest) {
         return NextResponse.json({
           success: false,
           requiresAuth: true,
-          message: `Your ${platform} connection expired. Please reconnect your account.`,
-          oauthUrl: getOAuthUrl(platform.toLowerCase()),
+          message: `Your ${body.platform} connection expired. Please reconnect your account.`,
+          oauthUrl: getOAuthUrl(body.platform.toLowerCase()),
         })
       }
 
@@ -69,7 +71,7 @@ export async function POST(request: NextRequest) {
       }, { status: 500 })
     }
 
-    const publishedUrl = publishResult.publishedUrl || `${getPlatformBaseUrl(platform.toLowerCase())}/${Date.now()}`
+    const publishedUrl = publishResult.publishedUrl || `${getPlatformBaseUrl(body.platform.toLowerCase())}/${Date.now()}`
     const shareUrl = `${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/share/${videoPublicId}`
 
     // Update project in database if projectId provided
@@ -83,12 +85,12 @@ export async function POST(request: NextRequest) {
     // Return V-Port response format
     return NextResponse.json({
       success: true,
-      message: `🎉 Video published to ${platform} successfully!`,
+      message: `🎉 Video published to ${body.platform} successfully!`,
       videoUrl,
       downloadUrl: videoUrl,
       shareUrl,
       published: true,
-      platform,
+      platform: body.platform,
       publishedUrl,
       videoId: publishResult.videoId,
       publishedAt: new Date().toISOString(),
@@ -97,7 +99,7 @@ export async function POST(request: NextRequest) {
     console.error('Publish error:', error)
     return NextResponse.json(
       { 
-        error: `Failed to publish to ${body?.platform || 'platform'}`,
+        error: `Failed to publish to ${platform}`,
         details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
