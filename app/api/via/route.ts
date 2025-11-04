@@ -1302,17 +1302,17 @@ async function generateAIVideo(params: any): Promise<string> {
     // }
     // const videoPath = path.join(tempDir, `generated_${Date.now()}.mp4`)
     // fs.writeFileSync(videoPath, videoBuffer)
-    
-    const result = await cloudinary.uploader.upload(videoPath, {
-      resource_type: 'video',
-      folder: 'vedit/generated',
-      use_filename: true,
-      unique_filename: true,
-    }) as { secure_url: string }
-    
-    if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath)
-    
-    return result.secure_url
+    // 
+    // const result = await cloudinary.uploader.upload(videoPath, {
+    //   resource_type: 'video',
+    //   folder: 'vedit/generated',
+    //   use_filename: true,
+    //   unique_filename: true,
+    // }) as { secure_url: string }
+    // 
+    // if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath)
+    // 
+    // return result.secure_url
   } catch (error) {
     console.error('❌ Video generation error:', error)
     return ''
