@@ -1004,14 +1004,19 @@ Format the script with clear sections, dialogue/narration, and timing suggestion
     }
   } catch (error) {
     console.error('❌ Script writing error:', error)
+    const fallbackLength = params?.length || 'short'
+    const fallbackStyle = params?.style || 'conversational'
+    const fallbackTone = params?.tone || 'engaging'
+    const fallbackIncludeVisuals = params?.includeVisuals || false
+    
     return {
       message: 'Here\'s a script template for your video:',
       script: `[OPENING HOOK - 5-10 seconds]
 Grab attention with a question, statement, or visual hook.
 
-[MAIN CONTENT - ${length === 'short' ? '30-45 seconds' : length === 'medium' ? '2-4 minutes' : '5-8 minutes'}]
-Deliver your main message in ${style || 'conversational'} style with ${tone || 'engaging'} tone.
-${includeVisuals ? '\n[VISUAL: Add text overlays, transitions, effects]' : ''}
+[MAIN CONTENT - ${fallbackLength === 'short' ? '30-45 seconds' : fallbackLength === 'medium' ? '2-4 minutes' : '5-8 minutes'}]
+Deliver your main message in ${fallbackStyle} style with ${fallbackTone} tone.
+${fallbackIncludeVisuals ? '\n[VISUAL: Add text overlays, transitions, effects]' : ''}
 
 [CLOSING - 5-10 seconds]
 Call-to-action or memorable closing statement.`,
