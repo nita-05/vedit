@@ -121,6 +121,14 @@ export async function GET(request: NextRequest) {
     }
 
     // Test a simple operation
+    if (!mongoose.connection.db) {
+      return NextResponse.json({
+        success: false,
+        error: 'Database connection not available',
+        status: 'error',
+      }, { status: 500 })
+    }
+
     const testResult = await mongoose.connection.db.admin().ping()
 
     return NextResponse.json({
