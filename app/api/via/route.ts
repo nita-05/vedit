@@ -1021,9 +1021,9 @@ ${fallbackIncludeVisuals ? '\n[VISUAL: Add text overlays, transitions, effects]'
 [CLOSING - 5-10 seconds]
 Call-to-action or memorable closing statement.`,
       scenes: [
-        { title: 'Opening', content: 'Hook your audience', visuals: includeVisuals ? 'Text overlay, attention-grabbing effect' : undefined },
-        { title: 'Main Content', content: 'Deliver your message', visuals: includeVisuals ? 'Transitions, text overlays' : undefined },
-        { title: 'Closing', content: 'Call-to-action', visuals: includeVisuals ? 'Final text overlay' : undefined },
+        { title: 'Opening', content: 'Hook your audience', visuals: fallbackIncludeVisuals ? 'Text overlay, attention-grabbing effect' : undefined },
+        { title: 'Main Content', content: 'Deliver your message', visuals: fallbackIncludeVisuals ? 'Transitions, text overlays' : undefined },
+        { title: 'Closing', content: 'Call-to-action', visuals: fallbackIncludeVisuals ? 'Final text overlay' : undefined },
       ],
     }
   }
