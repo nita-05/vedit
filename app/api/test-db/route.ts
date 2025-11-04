@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     const connectionStatus = mongoose.connection.readyState
     
     // Connection states: 0 = disconnected, 1 = connected, 2 = connecting, 3 = disconnecting
-    const states = {
+    const states: Record<number, string> = {
       0: 'disconnected',
       1: 'connected',
       2: 'connecting',
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
           success: false,
           error: 'Failed to connect to MongoDB',
           details: errorMessage,
-          status: states[connectionStatus] || 'error',
+          status: states[connectionStatus] ?? 'error',
           uri_provided: mongoUri ? 'Yes (hidden for security)' : 'No',
           troubleshooting: troubleshootingTips,
         }, { status: 400 })
