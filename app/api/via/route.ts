@@ -556,7 +556,7 @@ export async function POST(request: NextRequest) {
       // PRIORITY 1: If selectedClips provided (from dashboard with clip info), use those
       if (selectedClips && Array.isArray(selectedClips) && selectedClips.length >= 2) {
         // Extract unique video URLs from selected clips
-        clipUrls = [...new Set(selectedClips.map((clip: any) => clip.videoUrl).filter(Boolean))]
+        clipUrls = Array.from(new Set(selectedClips.map((clip: any) => clip.videoUrl).filter(Boolean)))
         console.log('🔗 Merging selected clips from different videos:', clipUrls.length, 'videos', selectedClips.length, 'clips')
         
         // If clips have start/end times, we need to trim each video first
