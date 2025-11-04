@@ -941,6 +941,7 @@ Make the ideas creative, engaging, and actionable.`
     }
   } catch (error) {
     console.error('❌ Brainstorming error:', error)
+    const fallbackStyle = params?.style || 'educational'
     return {
       message: 'Here are some video ideas for you:',
       ideas: [
@@ -948,14 +949,14 @@ Make the ideas creative, engaging, and actionable.`
           title: 'Top 5 Tips',
           concept: 'Create a listicle video with your top tips or insights',
           visuals: 'Use text overlays, transitions between tips',
-          style: style || 'educational',
+          style: fallbackStyle,
           hook: 'Start with a question that hooks viewers'
         },
         {
           title: 'Behind the Scenes',
           concept: 'Show the process or story behind something',
           visuals: 'Mix of footage, text overlays, music',
-          style: style || 'documentary',
+          style: fallbackStyle === 'educational' ? 'documentary' : fallbackStyle,
           hook: 'Reveal something unexpected'
         },
       ],
