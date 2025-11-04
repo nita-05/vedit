@@ -1279,23 +1279,29 @@ async function generateAIVideo(params: any): Promise<string> {
     console.log(`🎬 Generating Sora 2 video`)
     const { prompt, duration = 10 } = params
     
-    // Generate video with Sora 2
-    const videoResponse = await openai.video.generate({
-      model: 'sora-2',
-      prompt: prompt,
-      duration: duration,
-    })
+    // Note: Sora video generation API is not yet available in the OpenAI SDK
+    // This is a placeholder for future implementation
+    throw new Error('Sora video generation is not yet available in the OpenAI SDK. Please use other video editing features.')
     
-    const videoUrl = videoResponse.url || ''
-    
-    // Download and upload to Cloudinary
-    const videoBuffer = await fetch(videoUrl).then(r => r.buffer())
-    const tempDir = path.join(process.cwd(), 'temp')
-    if (!fs.existsSync(tempDir)) {
-      fs.mkdirSync(tempDir, { recursive: true })
-    }
-    const videoPath = path.join(tempDir, `generated_${Date.now()}.mp4`)
-    fs.writeFileSync(videoPath, videoBuffer)
+    // Future implementation when Sora API is available:
+    // const videoResponse = await openai.video.generate({
+    //   model: 'sora-2',
+    //   prompt: prompt,
+    //   duration: duration,
+    // })
+    // 
+    // const videoUrl = videoResponse.url || ''
+    // 
+    // // Download and upload to Cloudinary
+    // const response = await fetch(videoUrl)
+    // const arrayBuffer = await response.arrayBuffer()
+    // const videoBuffer = Buffer.from(arrayBuffer)
+    // const tempDir = path.join(process.cwd(), 'temp')
+    // if (!fs.existsSync(tempDir)) {
+    //   fs.mkdirSync(tempDir, { recursive: true })
+    // }
+    // const videoPath = path.join(tempDir, `generated_${Date.now()}.mp4`)
+    // fs.writeFileSync(videoPath, videoBuffer)
     
     const result = await cloudinary.uploader.upload(videoPath, {
       resource_type: 'video',
