@@ -543,7 +543,7 @@ export default function TimelineView({
                     handleTimelineClick(e)
                   }
                 }}
-                onDragOver={(e) => {
+                onDragOver={(e: React.DragEvent) => {
                   e.preventDefault()
                   e.stopPropagation()
                   e.dataTransfer.dropEffect = 'move'
@@ -576,12 +576,12 @@ export default function TimelineView({
                     })))
                   }
                 }}
-                onDragEnter={(e) => {
+                onDragEnter={(e: React.DragEvent) => {
                   e.preventDefault()
                   e.stopPropagation()
                   e.dataTransfer.dropEffect = 'move'
                 }}
-                onDrop={(e) => {
+                onDrop={(e: React.DragEvent) => {
                   e.preventDefault()
                   e.stopPropagation()
                   
@@ -702,7 +702,7 @@ export default function TimelineView({
                       width: `${getClipWidth(clip.start, clip.end)}%`,
                     }}
                     draggable={true}
-                    onDragStart={(e) => {
+                    onDragStart={(e: React.DragEvent) => {
                       e.stopPropagation()
                       setIsDragging(true)
                       setDraggingClip(clip.id)
