@@ -1217,7 +1217,9 @@ async function generateCustomOverlay(publicId: string, params: any): Promise<str
     }
     
     const imageUrl = imageResponse.data[0].url
-    const imageBuffer = await fetch(imageUrl).then(r => r.buffer())
+    const response = await fetch(imageUrl)
+    const arrayBuffer = await response.arrayBuffer()
+    const imageBuffer = Buffer.from(arrayBuffer)
     
     // Download overlay image
     const tempDir = path.join(process.cwd(), 'temp')
