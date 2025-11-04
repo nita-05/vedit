@@ -684,7 +684,7 @@ export default function TimelineView({
 
                 {/* Clips on this track */}
                 {track.clips.map((clip) => (
-                  <motion.div
+                  <div
                     key={clip.id}
                     className={`absolute top-0 bottom-0 rounded border-2 ${
                       selectedClips.has(clip.id)
@@ -763,7 +763,7 @@ export default function TimelineView({
                         {clip.name}
                       </span>
                     </div>
-                  </motion.div>
+                  </div>
                 ))}
 
                 {/* Playback indicator */}
