@@ -1147,7 +1147,7 @@ async function generateAIVoiceover(publicId: string, params: any): Promise<strin
       folder: 'vedit/processed',
       use_filename: true,
       unique_filename: true,
-    })
+    }) as { secure_url: string }
     
     // Cleanup
     const cleanupPaths = [audioPath, videoPath, outputPath].filter((p): p is string => Boolean(p))
@@ -1302,7 +1302,7 @@ async function generateAIVideo(params: any): Promise<string> {
       folder: 'vedit/generated',
       use_filename: true,
       unique_filename: true,
-    })
+    }) as { secure_url: string }
     
     if (fs.existsSync(videoPath)) fs.unlinkSync(videoPath)
     
