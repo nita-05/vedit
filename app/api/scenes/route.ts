@@ -39,7 +39,7 @@ export async function POST(request: NextRequest) {
     // Generate scene thumbnails at regular intervals
     const duration = resource.duration || 60
     const sceneCount = Math.max(3, Math.floor(duration / 10))
-    const intervals = []
+    const intervals: number[] = []
 
     for (let i = 0; i < sceneCount; i++) {
       const time = (duration / sceneCount) * i
