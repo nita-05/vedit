@@ -690,8 +690,8 @@ export default function DashboardPage() {
                     if (clipIds.length >= 2 && clips && clips.length >= 2) {
                       try {
                         // Extract unique video URLs from selected clips
-                        const uniqueVideoUrls = [...new Set(clips.map(clip => clip.videoUrl).filter(Boolean) as string[])]
-                        const uniqueVideoPublicIds = [...new Set(clips.map(clip => clip.videoPublicId).filter(Boolean) as string[])]
+                        const uniqueVideoUrls = Array.from(new Set(clips.map(clip => clip.videoUrl).filter(Boolean) as string[]))
+                        const uniqueVideoPublicIds = Array.from(new Set(clips.map(clip => clip.videoPublicId).filter(Boolean) as string[]))
                         
                         console.log('🔗 Merging selected clips:', {
                           clipCount: clipIds.length,
