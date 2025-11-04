@@ -19,8 +19,10 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, account, profile, user }) {
       // Persist profile image to token from multiple sources
       if (account?.provider === 'google') {
-        if (profile?.picture) {
-          token.picture = profile.picture
+        // Google profile has picture property, but TypeScript doesn't know about it
+        const googleProfile = profile as { picture?: string } | undefined
+        if (googleProfile?.picture) {
+          token.picture = googleProfile.picture
         }
         if (user?.image) {
           token.picture = user.image
