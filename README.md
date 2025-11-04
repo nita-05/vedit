@@ -19,9 +19,9 @@ All technical issues have been resolved:
 
 2. **Configure environment variables in `.env.local`:**
    ```env
-   MONGODB_URI=mongodb+srv://vedit_user:Nita2001@cluster0.gkt7fjv.mongodb.net/vedit?retryWrites=true&w=majority&appName=Cluster0
+   MONGODB_URI=your_mongodb_uri
    OPENAI_API_KEY=your_openai_key
-   OPENAI_MODEL=gpt-4o
+   OPENAI_MODEL=model_name
    CLOUDINARY_CLOUD_NAME=your_cloud_name
    CLOUDINARY_API_KEY=your_api_key
    CLOUDINARY_API_SECRET=your_api_secret
