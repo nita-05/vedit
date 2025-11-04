@@ -1212,6 +1212,10 @@ async function generateCustomOverlay(publicId: string, params: any): Promise<str
       n: 1,
     })
     
+    if (!imageResponse.data || imageResponse.data.length === 0 || !imageResponse.data[0].url) {
+      throw new Error('Failed to generate image: No image data returned')
+    }
+    
     const imageUrl = imageResponse.data[0].url
     const imageBuffer = await fetch(imageUrl).then(r => r.buffer())
     
