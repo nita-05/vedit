@@ -1257,7 +1257,7 @@ async function generateCustomOverlay(publicId: string, params: any): Promise<str
       folder: 'vedit/processed',
       use_filename: true,
       unique_filename: true,
-    })
+    }) as { secure_url: string }
     
     // Cleanup
     [overlayPath, videoPath, outputPath].forEach(p => {
