@@ -409,10 +409,10 @@ export class VideoProcessor {
           // Don't set path - let fluent-ffmpeg use PATH
           return
         }
-      } catch (pathError) {
+      } catch (pathError: any) {
         console.error('❌ FFmpeg not found in PATH or common locations')
         console.error('❌ Error details:', {
-          message: pathError?.message,
+          message: pathError?.message || String(pathError),
           code: pathError?.code,
         })
         // Still continue - might work if FFmpeg is installed via a different method
