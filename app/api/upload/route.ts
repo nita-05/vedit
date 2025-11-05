@@ -6,15 +6,22 @@ export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 60 // 60 seconds (capped at 10s on free tier, full 60s on Pro plan)
 
-// Initialize Cloudinary configuration
+// Initialize Cloudinary configuration - ensure it doesn't throw synchronously
+let cloudinaryInitialized = false
 function initializeCloudinary() {
   try {
+    // Return true if already initialized
+    if (cloudinaryInitialized) {
+      return true
+    }
+
     const cloudName = process.env.CLOUDINARY_CLOUD_NAME
     const apiKey = process.env.CLOUDINARY_API_KEY
     const apiSecret = process.env.CLOUDINARY_API_SECRET
 
     if (!cloudName || !apiKey || !apiSecret) {
-      throw new Error('Missing Cloudinary environment variables')
+      console.error('Missing Cloudinary environment variables')
+      return false
     }
 
     cloudinary.config({
@@ -23,6 +30,7 @@ function initializeCloudinary() {
       api_secret: apiSecret,
     })
 
+    cloudinaryInitialized = true
     return true
   } catch (error) {
     console.error('Failed to initialize Cloudinary:', error)
@@ -30,7 +38,39 @@ function initializeCloudinary() {
   }
 }
 
-export async function POST(request: NextRequest) {
+// Ensure Cloudinary is initialized at module load (but don't throw)
+try {
+  initializeCloudinary()
+} catch (error) {
+  console.error('Error during Cloudinary module initialization:', error)
+}
+
+// Add process-level error handlers to catch unhandled rejections
+if (typeof process !== 'undefined') {
+  process.on('unhandledRejection', (reason: any, promise: Promise<any>) => {
+    console.error('❌ Unhandled Promise Rejection in upload route:', reason)
+  })
+  
+  process.on('uncaughtException', (error: Error) => {
+    console.error('❌ Uncaught Exception in upload route:', error)
+  })
+}
+
+// Ensure we always return JSON, even for unexpected errors
+const safeJsonResponse = (error: any, status: number = 500) => {
+  const errorMessage = error?.message || error?.error?.message || String(error) || 'An unexpected error occurred'
+  return NextResponse.json(
+    { error: errorMessage },
+    {
+      status,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    }
+  )
+}
+
+async function handleUpload(request: NextRequest) {
   // Top-level error handler to catch any initialization errors
   // IMPORTANT: Vercel serverless functions have platform-level body size limits:
   // - Hobby plan: ~4.5MB
@@ -38,6 +78,7 @@ export async function POST(request: NextRequest) {
   // - Enterprise: Custom limits
   // If files exceed these limits, Vercel may return HTML error pages before our code runs.
   // The client-side code now handles HTML error responses gracefully.
+  
   try {
     const startTime = Date.now()
     const environment = process.env.VERCEL ? 'production (Vercel)' : 'development'
@@ -197,25 +238,108 @@ export async function POST(request: NextRequest) {
 
     let uploadResult: any
     try {
-      uploadResult = await new Promise((resolve, reject) => {
-        const timeout = setTimeout(() => {
-          reject(new Error('Upload timeout: The upload took too long to complete. Please try a smaller file or check your connection.'))
-        }, 55000) // 55 seconds timeout (slightly less than 60s maxDuration)
-
-        cloudinary.uploader
-          .upload_stream(
-            uploadOptions,
-            (error, result) => {
-              clearTimeout(timeout)
-              if (error) {
-                console.error('❌ Cloudinary upload error:', error)
-                reject(error)
-              } else {
-                resolve(result)
+      // Ensure Cloudinary is initialized before upload
+      // Double-check initialization to prevent any issues
+      try {
+        if (!initializeCloudinary()) {
+          console.error('❌ Cloudinary configuration missing')
+          return NextResponse.json(
+            { error: 'Cloudinary configuration is missing. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables.' },
+            { 
+              status: 500,
+              headers: {
+                'Content-Type': 'application/json',
               }
             }
           )
-          .end(buffer)
+        }
+      } catch (initError: any) {
+        console.error('❌ Error during Cloudinary initialization check:', initError)
+        return safeJsonResponse(
+          new Error('Failed to initialize Cloudinary. Please check your configuration.'),
+          500
+        )
+      }
+      
+      // Verify Cloudinary config is actually set
+      if (!cloudinary.config().cloud_name || !cloudinary.config().api_key || !cloudinary.config().api_secret) {
+        console.error('❌ Cloudinary configuration incomplete')
+        return safeJsonResponse(
+          new Error('Cloudinary configuration is incomplete. Please check your environment variables.'),
+          500
+        )
+      }
+
+      // Use a more reliable upload method with comprehensive error handling
+      uploadResult = await new Promise((resolve, reject) => {
+        let timeout: NodeJS.Timeout | null = null
+        let isResolved = false
+        let uploadStream: any = null
+
+        const cleanup = () => {
+          if (timeout) {
+            clearTimeout(timeout)
+            timeout = null
+          }
+        }
+
+        const safeReject = (error: any) => {
+          if (!isResolved) {
+            isResolved = true
+            cleanup()
+            reject(error)
+          }
+        }
+
+        const safeResolve = (result: any) => {
+          if (!isResolved) {
+            isResolved = true
+            cleanup()
+            resolve(result)
+          }
+        }
+
+        // Set timeout
+        timeout = setTimeout(() => {
+          safeReject(new Error('Upload timeout: The upload took too long to complete. Please try a smaller file or check your connection.'))
+        }, 55000) // 55 seconds timeout
+
+        try {
+          // Create upload stream
+          uploadStream = cloudinary.uploader.upload_stream(
+            uploadOptions,
+            (error: any, result: any) => {
+              if (error) {
+                console.error('❌ Cloudinary upload callback error:', error)
+                safeReject(error)
+              } else if (!result) {
+                console.error('❌ Cloudinary returned null result')
+                safeReject(new Error('Cloudinary returned null result'))
+              } else {
+                console.log('✅ Cloudinary upload successful')
+                safeResolve(result)
+              }
+            }
+          )
+
+          // Handle stream errors
+          if (uploadStream && typeof uploadStream.on === 'function') {
+            uploadStream.on('error', (error: any) => {
+              console.error('❌ Cloudinary stream error event:', error)
+              safeReject(error || new Error('Unknown stream error'))
+            })
+          }
+
+          // Write buffer to stream
+          if (uploadStream && typeof uploadStream.end === 'function') {
+            uploadStream.end(buffer)
+          } else {
+            safeReject(new Error('Upload stream is invalid or missing end method'))
+          }
+        } catch (error: any) {
+          console.error('❌ Error creating upload stream:', error)
+          safeReject(error || new Error('Failed to create upload stream'))
+        }
       })
     } catch (uploadError: any) {
       console.error('❌ Cloudinary upload failed:', uploadError)
@@ -228,6 +352,8 @@ export async function POST(request: NextRequest) {
         errorMessage = uploadError.error.message
       } else if (typeof uploadError === 'string') {
         errorMessage = uploadError
+      } else {
+        errorMessage = `Upload failed: ${String(uploadError)}`
       }
 
       return NextResponse.json(
@@ -273,27 +399,19 @@ export async function POST(request: NextRequest) {
     )
   } catch (error: any) {
     console.error('❌ Unexpected upload error:', error)
-    
-    // Provide more specific error messages
-    let errorMessage = 'Failed to upload file'
-    if (error?.message) {
-      errorMessage = error.message
-    } else if (error?.error?.message) {
-      errorMessage = error.error.message
-    } else if (typeof error === 'string') {
-      errorMessage = error
-    }
-
     // Always return JSON, never HTML
     // This ensures Next.js doesn't return its default HTML error page
-    return NextResponse.json(
-      { error: errorMessage },
-      { 
-        status: 500,
-        headers: {
-          'Content-Type': 'application/json',
-        }
-      }
-    )
+    return safeJsonResponse(error, 500)
+  }
+}
+
+// Export with wrapper to catch any errors at the framework level
+export async function POST(request: NextRequest) {
+  try {
+    return await handleUpload(request)
+  } catch (error: any) {
+    // Catch any errors that escape the handler (shouldn't happen, but safety net)
+    console.error('❌ Critical error in upload handler:', error)
+    return safeJsonResponse(error, 500)
   }
 }

@@ -44,39 +44,65 @@ export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         formData.append('file', file)
         // Note: Using signed uploads with API key/secret, so upload_preset not needed
 
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        })
+        let response: Response
+        try {
+          response = await fetch('/api/upload', {
+            method: 'POST',
+            body: formData,
+          })
+        } catch (fetchError: any) {
+          // Network error or fetch failed
+          throw new Error(`Network error: ${fetchError?.message || 'Failed to connect to server. Please check your connection and try again.'}`)
+        }
+
+        // Check content type before parsing - CRITICAL: Check before consuming body
+        const contentType = response.headers.get('content-type') || ''
+        const isJson = contentType.includes('application/json')
+
+        // Get response text first (can only read body once)
+        let responseText: string
+        try {
+          responseText = await response.text()
+        } catch (textError: any) {
+          console.error('Failed to read response text:', textError)
+          throw new Error(`Failed to read server response: ${textError?.message || 'Unknown error'}`)
+        }
 
         if (!response.ok) {
-          // Try to parse as JSON first
+          // Handle error response
           let errorData: any = {}
-          const contentType = response.headers.get('content-type')
           
-          if (contentType && contentType.includes('application/json')) {
+          if (isJson) {
             try {
-              errorData = await response.json()
+              // Try to parse as JSON
+              errorData = JSON.parse(responseText)
             } catch (e) {
               console.error('Failed to parse JSON error response:', e)
+              // Even if content-type says JSON, it might be HTML
+              if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
+                console.error('Server returned HTML despite JSON content-type')
+                errorData = { error: 'Server returned HTML error page. This usually indicates a server configuration issue or the file is too large for the hosting platform.' }
+              } else {
+                errorData = { error: `Server error (${response.status}): ${response.statusText}` }
+              }
             }
           } else {
-            // If HTML is returned, try to extract error message
-            try {
-              const htmlText = await response.text()
-              console.error('Server returned HTML instead of JSON:', htmlText.substring(0, 500))
-              
-              // Check for common error patterns
-              if (response.status === 413 || htmlText.includes('413') || htmlText.includes('PayloadTooLargeError')) {
-                errorData = { error: 'File size exceeds the maximum allowed size. Please upload a file smaller than 500MB. For larger files, consider compressing the video first.' }
-              } else if (response.status === 500) {
-                errorData = { error: 'Server error occurred during upload. Please check that all environment variables are configured correctly and try again.' }
+            // HTML or other non-JSON response
+            console.error('Server returned non-JSON response:', responseText.substring(0, 500))
+            
+            // Check for common error patterns
+            if (response.status === 413 || responseText.includes('413') || responseText.includes('PayloadTooLargeError') || responseText.includes('Request Entity Too Large')) {
+              errorData = { error: 'File size exceeds the maximum allowed size. Please upload a file smaller than 500MB. For larger files, consider compressing the video first.' }
+            } else if (response.status === 500) {
+              if (responseText.includes('Cloudinary') || responseText.includes('CLOUDINARY')) {
+                errorData = { error: 'Cloudinary configuration error. Please check that all Cloudinary environment variables are set correctly.' }
               } else {
-                errorData = { error: `Upload failed: Server returned ${response.status} ${response.statusText}. Please try again or contact support if the issue persists.` }
+                errorData = { error: 'Server error occurred during upload. Please check that all environment variables are configured correctly and try again. If the problem persists, the file might be too large for the server to process.' }
               }
-            } catch (e) {
-              console.error('Failed to parse error response:', e)
-              errorData = { error: `Upload failed: ${response.status} ${response.statusText}` }
+            } else if (response.status === 504 || responseText.includes('timeout') || responseText.includes('504')) {
+              errorData = { error: 'Upload timeout: The file took too long to upload. Please try a smaller file or check your connection.' }
+            } else {
+              errorData = { error: `Upload failed: Server returned ${response.status} ${response.statusText}. Please try again or contact support if the issue persists.` }
             }
           }
           
@@ -84,7 +110,23 @@ export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
           throw new Error(errorMessage)
         }
 
-        const data = await response.json()
+        // Parse success response as JSON
+        let data: any
+        if (isJson) {
+          try {
+            data = JSON.parse(responseText)
+          } catch (e) {
+            console.error('Failed to parse JSON success response:', e)
+            if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
+              throw new Error('Server returned HTML instead of JSON. This indicates a server error.')
+            }
+            throw new Error('Server returned invalid JSON response. Please try again.')
+          }
+        } else {
+          // Shouldn't happen for success, but handle it
+          console.error('Server returned non-JSON success response:', responseText.substring(0, 200))
+          throw new Error('Server returned invalid response format. Please try again.')
+        }
         
         if (!data.url || !data.publicId) {
           throw new Error('Upload succeeded but received invalid response')
