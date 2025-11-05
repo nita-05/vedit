@@ -5,6 +5,21 @@ import path from 'path'
 import os from 'os'
 import { promisify } from 'util'
 
+// Try to use FFmpeg installer if available (for Vercel/serverless)
+let ffmpegInstallerPath: string | null = null
+try {
+  const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
+  if (ffmpegInstaller && ffmpegInstaller.path) {
+    ffmpegInstallerPath = ffmpegInstaller.path
+    console.log(`✅ FFmpeg installer found: ${ffmpegInstallerPath}`)
+    // Set FFmpeg path immediately
+    ffmpeg.setFfmpegPath(ffmpegInstallerPath)
+    console.log(`✅ FFmpeg path set from installer`)
+  }
+} catch (error) {
+  console.log('ℹ️ @ffmpeg-installer/ffmpeg not available, will use system FFmpeg')
+}
+
 const writeFile = promisify(fs.writeFile)
 const unlink = promisify(fs.unlink)
 const mkdir = promisify(fs.mkdir)
@@ -22,7 +37,12 @@ function isVercelOrLinuxEnv(): boolean {
 // Configure FFmpeg path - works on Windows, Linux (Vercel), and macOS
 let ffmpegPathSet = false
 
-if (process.platform === 'win32') {
+// If FFmpeg installer is available, use it (especially for Vercel)
+if (ffmpegInstallerPath) {
+  ffmpeg.setFfmpegPath(ffmpegInstallerPath)
+  ffmpegPathSet = true
+  console.log(`✅ Using FFmpeg from @ffmpeg-installer: ${ffmpegInstallerPath}`)
+} else if (process.platform === 'win32') {
   // Windows paths
   const possiblePaths = [
     'C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe',
@@ -301,6 +321,13 @@ export class VideoProcessor {
   }
 
   private ensureFFmpegPath(): void {
+    // First, check if FFmpeg installer path is available (most reliable for Vercel)
+    if (ffmpegInstallerPath && fs.existsSync(ffmpegInstallerPath)) {
+      ffmpeg.setFfmpegPath(ffmpegInstallerPath)
+      console.log(`✅ Using FFmpeg from installer: ${ffmpegInstallerPath}`)
+      return
+    }
+    
     // On Vercel/Linux, aggressively try to find and set FFmpeg path before use
     if (isVercelOrLinux()) {
       const { execSync } = require('child_process')
