@@ -10,180 +10,196 @@ import { execSync } from 'child_process'
 function getFFmpegInstallerPath(): string | null {
   console.log('🔍 Starting FFmpeg binary search...')
   console.log(`📁 process.cwd(): ${process.cwd()}`)
-  console.log(`📁 __dirname equivalent check...`)
+  console.log(`📁 Platform: ${process.platform}`)
+  console.log(`📁 VERCEL env: ${process.env.VERCEL}`)
   
-  // Build list of possible base paths (avoid require.resolve() at module load time)
-  // On Vercel serverless, the path is /var/task, and node_modules might be at different locations
-  const cwd = process.cwd()
-  const possibleBasePaths: string[] = [
-    cwd, // Standard Next.js path
-    path.join(cwd, '.next', 'server'), // Next.js build output
-    '/var/task', // Vercel serverless function path
-    '/var/task/.next/server', // Next.js in Vercel
-    '/var/task/node_modules', // Direct node_modules in Vercel
-    '/var/task/.next/server/chunks', // Next.js chunks
-    '/var/task/.next/server/app', // Next.js app directory
-    // Also try parent directories
-    path.resolve(cwd, '..'),
-    path.resolve(cwd, '../..'),
-  ]
-  
-  // Try to get path from require.resolve (may fail, so wrap in try-catch)
-  try {
-    const resolvedPath = require.resolve('@ffmpeg-installer/ffmpeg')
-    if (resolvedPath && typeof resolvedPath === 'string') {
-      const dirPath = path.dirname(resolvedPath)
-      possibleBasePaths.unshift(dirPath) // Add to front for priority
-      console.log(`📦 Found module at: ${resolvedPath}, dir: ${dirPath}`)
-      
-      // Also try to resolve the linux-x64 package
-      try {
-        const linuxResolved = require.resolve('@ffmpeg-installer/ffmpeg-linux-x64')
-        if (linuxResolved) {
-          const linuxDir = path.dirname(linuxResolved)
-          possibleBasePaths.unshift(linuxDir)
-          console.log(`📦 Found Linux package at: ${linuxResolved}, dir: ${linuxDir}`)
-        }
-      } catch {
-        // Ignore
-      }
-    }
-  } catch (error: any) {
-    console.log(`ℹ️ require.resolve failed: ${error?.message || 'unknown error'}`)
-  }
-  
-  // Try to require the FFmpeg installer first (most reliable when it works)
-  try {
-    const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
-    console.log(`📦 FFmpeg installer module loaded:`, {
-      hasPath: !!ffmpegInstaller?.path,
-      path: ffmpegInstaller?.path,
-    })
-    if (ffmpegInstaller && ffmpegInstaller.path) {
-      const installerPath = ffmpegInstaller.path
-      if (fs.existsSync(installerPath)) {
-        console.log(`✅ FFmpeg installer path from require: ${installerPath}`)
-        return installerPath
-      } else {
-        console.log(`⚠️ Installer path doesn't exist: ${installerPath}`)
-        // Try to find it relative to the module
-        const moduleDir = path.dirname(require.resolve('@ffmpeg-installer/ffmpeg'))
-        const relativePath = path.join(moduleDir, installerPath)
-        if (fs.existsSync(relativePath)) {
-          console.log(`✅ Found FFmpeg at relative path: ${relativePath}`)
-          return relativePath
-        }
-      }
-    }
-  } catch (error: any) {
-    // Expected to fail on Vercel, continue to direct search
-    console.log(`ℹ️ FFmpeg installer require failed: ${error?.message || 'unknown error'}`)
-  }
-  
-  // Try to require the Linux-specific package directly (for Vercel)
+  // PRIORITY 1: Try to require the Linux-specific package directly (most reliable for Vercel)
   try {
     const linuxFFmpeg = require('@ffmpeg-installer/ffmpeg-linux-x64')
     console.log(`📦 Linux FFmpeg package loaded:`, {
       hasPath: !!linuxFFmpeg?.path,
       path: linuxFFmpeg?.path,
+      keys: linuxFFmpeg ? Object.keys(linuxFFmpeg) : [],
     })
-    if (linuxFFmpeg && linuxFFmpeg.path && fs.existsSync(linuxFFmpeg.path)) {
-      console.log(`✅ FFmpeg Linux package path: ${linuxFFmpeg.path}`)
-      return linuxFFmpeg.path
-    } else if (linuxFFmpeg && linuxFFmpeg.path) {
-      // Try relative to the module
+    if (linuxFFmpeg && linuxFFmpeg.path) {
+      // Try absolute path first
+      if (fs.existsSync(linuxFFmpeg.path)) {
+        console.log(`✅ FFmpeg Linux package path (absolute): ${linuxFFmpeg.path}`)
+        return linuxFFmpeg.path
+      }
+      
+      // Try relative to module directory
       try {
         const moduleDir = path.dirname(require.resolve('@ffmpeg-installer/ffmpeg-linux-x64'))
         const relativePath = path.resolve(moduleDir, linuxFFmpeg.path)
         if (fs.existsSync(relativePath)) {
-          console.log(`✅ Found FFmpeg at relative path: ${relativePath}`)
+          console.log(`✅ FFmpeg Linux package path (relative): ${relativePath}`)
           return relativePath
         }
-      } catch {
-        // Continue to direct search
+        
+        // Try just 'ffmpeg' in the module directory
+        const directPath = path.join(moduleDir, 'ffmpeg')
+        if (fs.existsSync(directPath)) {
+          console.log(`✅ FFmpeg found directly in module dir: ${directPath}`)
+          return directPath
+        }
+      } catch (resolveError: any) {
+        console.log(`ℹ️ Could not resolve Linux package dir: ${resolveError?.message}`)
       }
     }
   } catch (error: any) {
     console.log(`ℹ️ Linux FFmpeg package require failed: ${error?.message || 'unknown error'}`)
   }
   
-  console.log(`ℹ️ Searching node_modules directly...`)
-  
-  // Search for FFmpeg binary in node_modules across different base paths
-  for (const basePath of possibleBasePaths) {
-    console.log(`🔍 Searching base path: ${basePath}`)
-    try {
-      if (!fs.existsSync(basePath)) {
-        console.log(`  ⚠️ Base path doesn't exist: ${basePath}`)
-        continue
-      }
-      
-      // Try multiple node_modules locations
-      const nodeModulesPaths = [
-        path.join(basePath, 'node_modules', '@ffmpeg-installer'),
-        path.join(basePath, '@ffmpeg-installer'), // In case node_modules is flattened
-        path.resolve(basePath, '..', 'node_modules', '@ffmpeg-installer'), // Parent node_modules
-        path.resolve(basePath, '../..', 'node_modules', '@ffmpeg-installer'), // Grandparent
-      ]
-      
-      let nodeModulesBase: string | null = null
-      for (const nmPath of nodeModulesPaths) {
-        if (fs.existsSync(nmPath)) {
-          nodeModulesBase = nmPath
-          console.log(`  📂 Found @ffmpeg-installer at: ${nmPath}`)
-          break
+  // PRIORITY 2: Try to require the main FFmpeg installer package
+  try {
+    const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
+    console.log(`📦 FFmpeg installer module loaded:`, {
+      hasPath: !!ffmpegInstaller?.path,
+      path: ffmpegInstaller?.path,
+      keys: ffmpegInstaller ? Object.keys(ffmpegInstaller) : [],
+    })
+    if (ffmpegInstaller && ffmpegInstaller.path) {
+      const installerPath = ffmpegInstaller.path
+      if (fs.existsSync(installerPath)) {
+        console.log(`✅ FFmpeg installer path from require (absolute): ${installerPath}`)
+        return installerPath
+      } else {
+        // Try relative to the module
+        try {
+          const moduleDir = path.dirname(require.resolve('@ffmpeg-installer/ffmpeg'))
+          const relativePath = path.resolve(moduleDir, installerPath)
+          if (fs.existsSync(relativePath)) {
+            console.log(`✅ FFmpeg installer path (relative): ${relativePath}`)
+            return relativePath
+          }
+        } catch {
+          // Continue to search
         }
       }
-      
-      if (!nodeModulesBase) {
-        console.log(`  ⚠️ @ffmpeg-installer directory doesn't exist in base path: ${basePath}`)
+    }
+  } catch (error: any) {
+    console.log(`ℹ️ FFmpeg installer require failed: ${error?.message || 'unknown error'}`)
+  }
+  
+  // PRIORITY 3: Use require.resolve to find module directories, then search for binary
+  const possibleBasePaths: string[] = []
+  
+  try {
+    // Try to resolve the linux-x64 package
+    const linuxResolved = require.resolve('@ffmpeg-installer/ffmpeg-linux-x64')
+    const linuxDir = path.dirname(linuxResolved)
+    possibleBasePaths.unshift(linuxDir) // Highest priority
+    console.log(`📦 Resolved Linux package at: ${linuxResolved}, dir: ${linuxDir}`)
+  } catch (error: any) {
+    console.log(`ℹ️ Could not resolve Linux package: ${error?.message}`)
+  }
+  
+  try {
+    // Try to resolve the main package
+    const resolvedPath = require.resolve('@ffmpeg-installer/ffmpeg')
+    const dirPath = path.dirname(resolvedPath)
+    possibleBasePaths.push(dirPath)
+    console.log(`📦 Resolved main package at: ${resolvedPath}, dir: ${dirPath}`)
+  } catch (error: any) {
+    console.log(`ℹ️ Could not resolve main package: ${error?.message}`)
+  }
+  
+  // Add common paths for Vercel/serverless
+  const cwd = process.cwd()
+  possibleBasePaths.push(
+    cwd,
+    '/var/task',
+    '/var/task/node_modules',
+    path.join(cwd, 'node_modules'),
+    path.resolve(cwd, '..', 'node_modules'),
+  )
+  
+  console.log(`ℹ️ Searching node_modules directly in resolved paths...`)
+  
+  // First, check resolved module directories directly
+  for (const basePath of possibleBasePaths) {
+    console.log(`🔍 Checking resolved path: ${basePath}`)
+    try {
+      if (!fs.existsSync(basePath)) {
         continue
       }
       
-      // List what's actually in @ffmpeg-installer directory
-      try {
-        const dirContents = fs.readdirSync(nodeModulesBase)
-        console.log(`  📋 Directory contents: ${dirContents.join(', ')}`)
-      } catch {
-        // Continue
-      }
-      
-      // Try multiple possible locations for the FFmpeg binary
-      // @ffmpeg-installer/ffmpeg uses platform-specific packages like @ffmpeg-installer/ffmpeg-linux-x64
-      const possiblePaths = [
-        // Direct in main package
-        path.join(nodeModulesBase, 'ffmpeg', 'ffmpeg'),
-        // Platform-specific packages (installed as separate npm packages)
-        path.join(nodeModulesBase, 'linux-x64', 'ffmpeg'),
-        path.join(nodeModulesBase, 'ffmpeg-linux-x64', 'ffmpeg'),
-        path.join(nodeModulesBase, 'ffmpeg', 'linux-x64', 'ffmpeg'),
-        path.join(nodeModulesBase, 'ffmpeg', 'platforms', 'linux-x64', 'ffmpeg'),
-        // Alternative locations
-        path.join(nodeModulesBase, 'ffmpeg', 'vendor', 'ffmpeg'),
-        // Check if linux-x64 package is installed separately
-        path.join(basePath, 'node_modules', '@ffmpeg-installer', 'ffmpeg-linux-x64', 'ffmpeg'),
-        path.join(basePath, 'node_modules', '@ffmpeg-installer', 'ffmpeg-linux-x64', 'vendor', 'ffmpeg'),
-        path.join(basePath, 'node_modules', '@ffmpeg-installer', 'ffmpeg-linux-x64', 'ffmpeg-linux-x64'),
+      // Check if this is already a module directory (from require.resolve)
+      // Try common binary locations in module directory
+      const directPaths = [
+        path.join(basePath, 'ffmpeg'),
+        path.join(basePath, 'vendor', 'ffmpeg'),
+        path.join(basePath, 'bin', 'ffmpeg'),
       ]
       
-      for (const binaryPath of possiblePaths) {
-        console.log(`  🔎 Checking: ${binaryPath}`)
+      for (const binaryPath of directPaths) {
         if (fs.existsSync(binaryPath)) {
           console.log(`  ✅ Found binary at: ${binaryPath}`)
           try {
-            // Try to verify it's a valid binary
             execSync(`"${binaryPath}" -version`, { stdio: 'pipe', timeout: 2000 })
             console.log(`✅ Verified FFmpeg binary at: ${binaryPath}`)
             return binaryPath
-          } catch (verifyError: any) {
-            console.log(`  ⚠️ Binary exists but verification failed: ${verifyError?.message}`)
-            // Continue to next path
+          } catch {
+            // Continue
+          }
+        }
+      }
+      
+      // Try to find @ffmpeg-installer directory
+      const nodeModulesPaths = [
+        path.join(basePath, 'node_modules', '@ffmpeg-installer'),
+        path.join(basePath, '@ffmpeg-installer'),
+        path.resolve(basePath, '..', 'node_modules', '@ffmpeg-installer'),
+        path.resolve(basePath, '../..', 'node_modules', '@ffmpeg-installer'),
+      ]
+      
+      for (const nmPath of nodeModulesPaths) {
+        if (!fs.existsSync(nmPath)) continue
+        
+        console.log(`  📂 Found @ffmpeg-installer at: ${nmPath}`)
+        
+        // List directory contents for debugging
+        try {
+          const dirContents = fs.readdirSync(nmPath)
+          console.log(`  📋 Directory contents: ${dirContents.join(', ')}`)
+        } catch {
+          // Continue
+        }
+        
+        // Try multiple possible locations for the FFmpeg binary
+        const possiblePaths = [
+          path.join(nmPath, 'linux-x64', 'ffmpeg'),
+          path.join(nmPath, 'ffmpeg-linux-x64', 'ffmpeg'),
+          path.join(nmPath, 'ffmpeg', 'ffmpeg'),
+          path.join(nmPath, 'ffmpeg', 'linux-x64', 'ffmpeg'),
+          path.join(nmPath, 'ffmpeg', 'vendor', 'ffmpeg'),
+        ]
+        
+        // Also check if there's a separate package directory
+        const parentDir = path.dirname(nmPath)
+        possiblePaths.push(
+          path.join(parentDir, 'ffmpeg-linux-x64', 'ffmpeg'),
+          path.join(parentDir, 'ffmpeg-linux-x64', 'vendor', 'ffmpeg'),
+        )
+        
+        for (const binaryPath of possiblePaths) {
+          console.log(`  🔎 Checking: ${binaryPath}`)
+          if (fs.existsSync(binaryPath)) {
+            console.log(`  ✅ Found binary at: ${binaryPath}`)
+            try {
+              execSync(`"${binaryPath}" -version`, { stdio: 'pipe', timeout: 2000 })
+              console.log(`✅ Verified FFmpeg binary at: ${binaryPath}`)
+              return binaryPath
+            } catch (verifyError: any) {
+              console.log(`  ⚠️ Binary exists but verification failed: ${verifyError?.message}`)
+              // Continue to next path
+            }
           }
         }
       }
     } catch (error: any) {
-      console.log(`  ❌ Error searching base path ${basePath}: ${error?.message}`)
-      // Continue to next base path
+      console.log(`  ❌ Error searching path ${basePath}: ${error?.message}`)
     }
   }
   
