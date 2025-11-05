@@ -241,6 +241,18 @@ export class VideoProcessor {
     console.log(`🎬 Starting ${isImage ? 'image' : 'video'} processing...`)
     console.log('📋 Instruction:', JSON.stringify(instruction, null, 2))
     
+    // Ensure FFmpeg path is set BEFORE any checks or processing
+    this.ensureFFmpegPath()
+    
+    // Log current FFmpeg configuration
+    try {
+      const ffmpegModule = ffmpeg as any
+      const currentPath = ffmpegModule.ffmpegPath
+      console.log(`📹 Current FFmpeg path setting: ${currentPath || 'not set (using PATH)'}`)
+    } catch {
+      console.log('📹 Could not check FFmpeg path setting')
+    }
+    
     // Check if FFmpeg is available before processing
     // On Vercel, be lenient - the check will always resolve, errors will show during actual FFmpeg use
     try {
@@ -251,6 +263,8 @@ export class VideoProcessor {
       // On Vercel, the check always resolves, so this shouldn't happen
       if (isVercelOrLinux()) {
         console.warn('⚠️ FFmpeg check had issues on Vercel, but continuing...')
+        // Try one more time to set FFmpeg path
+        this.ensureFFmpegPath()
       } else {
         console.error('❌ FFmpeg not available:', ffmpegError)
         throw new Error(`FFmpeg is not available: ${ffmpegError?.message || 'FFmpeg check failed'}`)
