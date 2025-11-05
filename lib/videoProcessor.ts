@@ -4,6 +4,7 @@ import fs from 'fs'
 import path from 'path'
 import os from 'os'
 import { promisify } from 'util'
+import { execSync } from 'child_process'
 
 // Function to get FFmpeg installer path (lazy load to avoid module load issues)
 function getFFmpegInstallerPath(): string | null {
@@ -117,7 +118,6 @@ function getFFmpegInstallerPath(): string | null {
         if (fs.existsSync(binaryPath)) {
           console.log(`  ✅ Found binary at: ${binaryPath}`)
           try {
-            const { execSync } = require('child_process')
             // Try to verify it's a valid binary
             execSync(`"${binaryPath}" -version`, { stdio: 'pipe', timeout: 2000 })
             console.log(`✅ Verified FFmpeg binary at: ${binaryPath}`)
@@ -189,7 +189,6 @@ if (!ffmpegPathSet && process.platform === 'win32') {
   }
 } else {
   // Linux (Vercel) and macOS paths - check more aggressively on Vercel
-  const { execSync } = require('child_process')
   const possiblePaths = [
     '/usr/bin/ffmpeg',           // Standard Linux path
     '/usr/local/bin/ffmpeg',     // Common install path
@@ -469,7 +468,6 @@ export class VideoProcessor {
       const currentPath = ffmpegModule.ffmpegPath
       if (currentPath) {
         // Try to verify the current path still works
-        const { execSync } = require('child_process')
         try {
           execSync(`${currentPath} -version`, { stdio: 'pipe', timeout: 2000 })
           console.log(`✅ FFmpeg path already set and verified: ${currentPath}`)
@@ -486,8 +484,6 @@ export class VideoProcessor {
     // On Vercel/Linux, FFmpeg is NOT available system-wide
     // We need to use the bundled binary from @ffmpeg-installer/ffmpeg
     if (isVercelOrLinux()) {
-      const { execSync } = require('child_process')
-      
       // Try multiple approaches to find and set FFmpeg path
       const installerPath = getFFmpegInstallerPath()
       
@@ -619,8 +615,6 @@ export class VideoProcessor {
       if (isVercelOrLinux()) {
         console.log('ℹ️ Vercel/Linux detected - using lenient FFmpeg check')
         // Try a quick check, but don't fail if it doesn't work
-        const { execSync } = require('child_process')
-        
         try {
           // Quick version check
           try {
@@ -663,8 +657,6 @@ export class VideoProcessor {
       }
       
       // On Windows/macOS, do a more thorough check
-      const { execSync } = require('child_process')
-      
       try {
         // Method 1: Try to get FFmpeg version directly (fastest check)
         try {
@@ -841,7 +833,6 @@ export class VideoProcessor {
       this.ensureFFmpegPath()
       
       // Verify FFmpeg is actually available before proceeding
-      const { execSync } = require('child_process')
       let ffmpegVerified = false
       let ffmpegPath: string | null = null
       
