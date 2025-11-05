@@ -40,13 +40,15 @@ export class VideoProcessor {
   private tempDir: string
 
   constructor() {
-    // Use system temp directory instead of project directory to avoid OneDrive sync issues
-    // This is more reliable on Windows, especially with OneDrive
-    const systemTempDir = os.tmpdir() // Returns Windows temp (e.g., C:\Users\...\AppData\Local\Temp)
+    // Use system temp directory - works on both Windows and Unix (Vercel/Linux)
+    // On Vercel, os.tmpdir() returns '/tmp'
+    // On Windows, it returns 'C:\Users\...\AppData\Local\Temp'
+    const systemTempDir = os.tmpdir()
     this.tempDir = path.join(systemTempDir, 'vedit-temp')
     
     console.log(`📁 Using temp directory: ${this.tempDir}`)
     console.log(`📁 System temp: ${systemTempDir}`)
+    console.log(`📁 Platform: ${process.platform}`)
     
     // Ensure temp directory exists
     this.ensureTempDir()
@@ -54,13 +56,53 @@ export class VideoProcessor {
 
   private ensureTempDir() {
     try {
+      // Normalize path to handle Windows vs Unix differences
+      const normalizedTempDir = path.resolve(this.tempDir)
+      this.tempDir = normalizedTempDir
+      
       if (!fs.existsSync(this.tempDir)) {
+        // Use recursive: true to create parent directories if needed
         fs.mkdirSync(this.tempDir, { recursive: true })
-        console.log(`📁 Created temp directory: ${this.tempDir}`)
+        console.log(`✅ Created temp directory: ${this.tempDir}`)
+      } else {
+        console.log(`✅ Temp directory already exists: ${this.tempDir}`)
       }
-    } catch (error) {
+      
+      // Verify we can write to the directory
+      const testFile = path.join(this.tempDir, `.write_test_${Date.now()}`)
+      try {
+        fs.writeFileSync(testFile, 'test')
+        fs.unlinkSync(testFile)
+        console.log(`✅ Temp directory is writable: ${this.tempDir}`)
+      } catch (writeError) {
+        console.error(`⚠️ Temp directory write test failed: ${writeError}`)
+        // Don't throw - might still work for some operations
+      }
+    } catch (error: any) {
       console.error(`❌ Failed to create temp directory: ${error}`)
-      throw error
+      console.error(`❌ Error details:`, {
+        message: error?.message,
+        code: error?.code,
+        path: error?.path,
+        syscall: error?.syscall,
+      })
+      
+      // On Vercel, try /tmp directly if system temp fails
+      if (process.env.VERCEL || process.platform !== 'win32') {
+        console.log(`🔄 Trying /tmp directory as fallback...`)
+        try {
+          this.tempDir = '/tmp/vedit-temp'
+          if (!fs.existsSync(this.tempDir)) {
+            fs.mkdirSync(this.tempDir, { recursive: true })
+          }
+          console.log(`✅ Using fallback temp directory: ${this.tempDir}`)
+        } catch (fallbackError) {
+          console.error(`❌ Fallback temp directory also failed: ${fallbackError}`)
+          throw new Error(`Cannot create temp directory. Original error: ${error?.message || error}`)
+        }
+      } else {
+        throw error
+      }
     }
   }
 
