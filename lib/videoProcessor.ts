@@ -301,16 +301,49 @@ export class VideoProcessor {
   }
 
   private ensureFFmpegPath(): void {
-    // On Vercel/Linux, try to find and set FFmpeg path before use
+    // On Vercel/Linux, aggressively try to find and set FFmpeg path before use
     if (isVercelOrLinux()) {
       const { execSync } = require('child_process')
-      const possiblePaths = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg']
+      const possiblePaths = [
+        '/usr/bin/ffmpeg',
+        '/usr/local/bin/ffmpeg',
+        '/bin/ffmpeg',
+        '/opt/ffmpeg/bin/ffmpeg',
+        '/usr/share/ffmpeg/ffmpeg',
+      ]
       
-      // Check if path is already set
+      // First, try to use 'which' command to find FFmpeg
       try {
-        const currentPath = (ffmpeg as any).getAvailableEncoders ? undefined : (ffmpeg as any).ffmpegPath
-        if (currentPath && fs.existsSync(currentPath)) {
-          return // Path already set and valid
+        const whichPath = execSync('which ffmpeg', { encoding: 'utf8', timeout: 2000 }).trim()
+        if (whichPath && fs.existsSync(whichPath)) {
+          ffmpeg.setFfmpegPath(whichPath)
+          console.log(`✅ FFmpeg found via 'which': ${whichPath}`)
+          return
+        }
+      } catch (whichError) {
+        console.log('ℹ️ which command failed, trying other methods...')
+      }
+      
+      // Try 'whereis' command (Linux)
+      try {
+        const whereisOutput = execSync('whereis -b ffmpeg', { encoding: 'utf8', timeout: 2000 })
+        const matches = whereisOutput.match(/ffmpeg:\s+(\S+)/)
+        if (matches && matches[1] && fs.existsSync(matches[1])) {
+          ffmpeg.setFfmpegPath(matches[1])
+          console.log(`✅ FFmpeg found via 'whereis': ${matches[1]}`)
+          return
+        }
+      } catch (whereisError) {
+        console.log('ℹ️ whereis command failed, trying file system checks...')
+      }
+      
+      // Check if path is already set and valid
+      try {
+        // Try to get current path from fluent-ffmpeg
+        const ffmpegModule = ffmpeg as any
+        if (ffmpegModule.ffmpegPath && fs.existsSync(ffmpegModule.ffmpegPath)) {
+          console.log(`✅ FFmpeg path already set: ${ffmpegModule.ffmpegPath}`)
+          return
         }
       } catch {
         // Continue to find path
@@ -318,20 +351,43 @@ export class VideoProcessor {
       
       // Try to find FFmpeg in common paths
       for (const checkPath of possiblePaths) {
-        if (fs.existsSync(checkPath)) {
-          ffmpeg.setFfmpegPath(checkPath)
-          console.log(`✅ FFmpeg path set to: ${checkPath}`)
-          return
+        try {
+          if (fs.existsSync(checkPath)) {
+            // Verify it's executable
+            try {
+              execSync(`${checkPath} -version`, { stdio: 'pipe', timeout: 2000 })
+              ffmpeg.setFfmpegPath(checkPath)
+              console.log(`✅ FFmpeg found and verified at: ${checkPath}`)
+              return
+            } catch (execError) {
+              console.warn(`⚠️ FFmpeg exists at ${checkPath} but not executable, trying next...`)
+            }
+          }
+        } catch (error) {
+          // Continue checking
         }
       }
       
-      // Try to verify FFmpeg is in PATH
+      // Last resort: Try to verify FFmpeg is in PATH without setting explicit path
       try {
-        execSync('ffmpeg -version', { stdio: 'pipe', timeout: 2000 })
-        console.log('✅ FFmpeg verified in PATH')
-        // Path not explicitly set, but fluent-ffmpeg should find it
-      } catch {
-        console.warn('⚠️ FFmpeg not found in common paths or PATH, but proceeding anyway')
+        const versionOutput = execSync('ffmpeg -version', { 
+          stdio: 'pipe', 
+          timeout: 2000,
+          encoding: 'utf8'
+        })
+        if (versionOutput && versionOutput.includes('ffmpeg version')) {
+          console.log('✅ FFmpeg verified in PATH (no explicit path set)')
+          // Don't set path - let fluent-ffmpeg use PATH
+          return
+        }
+      } catch (pathError) {
+        console.error('❌ FFmpeg not found in PATH or common locations')
+        console.error('❌ Error details:', {
+          message: pathError?.message,
+          code: pathError?.code,
+        })
+        // Still continue - might work if FFmpeg is installed via a different method
+        console.warn('⚠️ Proceeding anyway - FFmpeg might be available via other means')
       }
     }
   }
@@ -803,9 +859,38 @@ export class VideoProcessor {
           console.log(`✅ FFmpeg processing completed (${isImage ? 'image' : 'video'})`)
           resolve()
         })
-        .on('error', (err) => {
+        .on('error', (err: any) => {
           console.error('❌ FFmpeg error:', err.message)
-          reject(err)
+          console.error('❌ FFmpeg error details:', {
+            message: err.message,
+            code: err.code,
+            signal: err.signal,
+            killed: err.killed,
+            spawnargs: err.spawnargs,
+          })
+          
+          // Check if it's a "Cannot find ffmpeg" error
+          if (err.message && (err.message.includes('Cannot find ffmpeg') || err.message.includes('ffmpeg not found') || err.message.includes('spawn ffmpeg'))) {
+            console.error('❌ FFmpeg not found by fluent-ffmpeg')
+            console.error('❌ Attempted to find FFmpeg in:')
+            console.error('   - Common paths: /usr/bin/ffmpeg, /usr/local/bin/ffmpeg, /bin/ffmpeg')
+            console.error('   - System PATH')
+            
+            // Try one more time to find and set FFmpeg path
+            this.ensureFFmpegPath()
+            
+            // Log current FFmpeg path setting
+            try {
+              const ffmpegModule = ffmpeg as any
+              console.error('❌ Current FFmpeg path setting:', ffmpegModule.ffmpegPath || 'not set (using PATH)')
+            } catch {
+              console.error('❌ Could not check FFmpeg path setting')
+            }
+            
+            reject(new Error(`FFmpeg not found. Please ensure FFmpeg is installed on the server. Error: ${err.message}`))
+          } else {
+            reject(err)
+          }
         })
         .run()
     })
