@@ -50,8 +50,24 @@ function getFFmpegInstallerPath(): string | null {
   } catch (error: any) {
     // Expected to fail on Vercel, continue to direct search
     console.log(`ℹ️ FFmpeg installer require failed: ${error?.message || 'unknown error'}`)
-    console.log(`ℹ️ Searching node_modules directly...`)
   }
+  
+  // Try to require the Linux-specific package directly (for Vercel)
+  try {
+    const linuxFFmpeg = require('@ffmpeg-installer/ffmpeg-linux-x64')
+    console.log(`📦 Linux FFmpeg package loaded:`, {
+      hasPath: !!linuxFFmpeg?.path,
+      path: linuxFFmpeg?.path,
+    })
+    if (linuxFFmpeg && linuxFFmpeg.path && fs.existsSync(linuxFFmpeg.path)) {
+      console.log(`✅ FFmpeg Linux package path: ${linuxFFmpeg.path}`)
+      return linuxFFmpeg.path
+    }
+  } catch (error: any) {
+    console.log(`ℹ️ Linux FFmpeg package require failed: ${error?.message || 'unknown error'}`)
+  }
+  
+  console.log(`ℹ️ Searching node_modules directly...`)
   
   // Search for FFmpeg binary in node_modules across different base paths
   for (const basePath of possibleBasePaths) {
@@ -79,15 +95,21 @@ function getFFmpegInstallerPath(): string | null {
       }
       
       // Try multiple possible locations for the FFmpeg binary
+      // @ffmpeg-installer/ffmpeg uses platform-specific packages like @ffmpeg-installer/ffmpeg-linux-x64
       const possiblePaths = [
         // Direct in main package
         path.join(nodeModulesBase, 'ffmpeg', 'ffmpeg'),
-        // Platform-specific packages (these are separate packages)
+        // Platform-specific packages (installed as separate npm packages)
         path.join(nodeModulesBase, 'linux-x64', 'ffmpeg'),
+        path.join(nodeModulesBase, 'ffmpeg-linux-x64', 'ffmpeg'),
         path.join(nodeModulesBase, 'ffmpeg', 'linux-x64', 'ffmpeg'),
         path.join(nodeModulesBase, 'ffmpeg', 'platforms', 'linux-x64', 'ffmpeg'),
         // Alternative locations
         path.join(nodeModulesBase, 'ffmpeg', 'vendor', 'ffmpeg'),
+        // Check if linux-x64 package is installed separately
+        path.join(basePath, 'node_modules', '@ffmpeg-installer', 'ffmpeg-linux-x64', 'ffmpeg'),
+        path.join(basePath, 'node_modules', '@ffmpeg-installer', 'ffmpeg-linux-x64', 'vendor', 'ffmpeg'),
+        path.join(basePath, 'node_modules', '@ffmpeg-installer', 'ffmpeg-linux-x64', 'ffmpeg-linux-x64'),
       ]
       
       for (const binaryPath of possiblePaths) {
