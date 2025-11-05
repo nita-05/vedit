@@ -8,18 +8,39 @@ import { promisify } from 'util'
 // Function to get FFmpeg installer path (lazy load to avoid module load issues)
 function getFFmpegInstallerPath(): string | null {
   try {
+    // Try to require the FFmpeg installer
     const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
     if (ffmpegInstaller && ffmpegInstaller.path) {
       const installerPath = ffmpegInstaller.path
       // Verify path exists
       if (fs.existsSync(installerPath)) {
+        console.log(`✅ FFmpeg installer path found and verified: ${installerPath}`)
         return installerPath
       } else {
         console.warn(`⚠️ FFmpeg installer path does not exist: ${installerPath}`)
+        // Try to find the binary in node_modules directly
+        const nodeModulesPath = path.join(process.cwd(), 'node_modules', '@ffmpeg-installer', 'ffmpeg')
+        const possibleBinaryPaths = [
+          path.join(nodeModulesPath, 'ffmpeg'),
+          path.join(nodeModulesPath, 'linux-x64', 'ffmpeg'),
+          path.join(nodeModulesPath, 'linux', 'ffmpeg'),
+        ]
+        for (const binaryPath of possibleBinaryPaths) {
+          if (fs.existsSync(binaryPath)) {
+            console.log(`✅ Found FFmpeg binary at: ${binaryPath}`)
+            return binaryPath
+          }
+        }
       }
     }
   } catch (error: any) {
-    console.log('ℹ️ @ffmpeg-installer/ffmpeg not available:', error?.message || 'module not found')
+    // Don't fail if installer isn't available - we'll use system FFmpeg
+    const errorMsg = error?.message || 'module not found'
+    if (errorMsg.includes('linux-x64') || errorMsg.includes('package.json')) {
+      console.log('ℹ️ FFmpeg installer platform package not found, will use system FFmpeg')
+    } else {
+      console.log('ℹ️ @ffmpeg-installer/ffmpeg not available:', errorMsg)
+    }
   }
   return null
 }
@@ -42,12 +63,20 @@ function isVercelOrLinuxEnv(): boolean {
 let ffmpegPathSet = false
 
 // Try to get FFmpeg installer path (lazy load)
+// Note: This may fail on Vercel due to platform package resolution, that's OK
 const ffmpegInstallerPath = getFFmpegInstallerPath()
 if (ffmpegInstallerPath) {
-  ffmpeg.setFfmpegPath(ffmpegInstallerPath)
-  ffmpegPathSet = true
-  console.log(`✅ Using FFmpeg from @ffmpeg-installer: ${ffmpegInstallerPath}`)
-} else if (process.platform === 'win32') {
+  try {
+    ffmpeg.setFfmpegPath(ffmpegInstallerPath)
+    ffmpegPathSet = true
+    console.log(`✅ Using FFmpeg from @ffmpeg-installer: ${ffmpegInstallerPath}`)
+  } catch (setPathError) {
+    console.warn('⚠️ Failed to set FFmpeg installer path, will use system FFmpeg')
+  }
+}
+
+// If installer didn't work, try system FFmpeg
+if (!ffmpegPathSet && process.platform === 'win32') {
   // Windows paths
   const possiblePaths = [
     'C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe',
