@@ -379,12 +379,24 @@ export class VideoProcessor {
       console.log(`🔧 Applying edit: ${instruction.operation} to ${isImage ? 'image' : 'video'}`)
       
       // CRITICAL: Ensure output directory exists RIGHT BEFORE FFmpeg runs
-      // Use absolute path and normalize it for Windows compatibility
-      const outputDir = path.resolve(path.dirname(outputPath))
-      const normalizedOutputPath = path.resolve(outputPath)
+      // On Vercel/Linux, use tempDir directly; on Windows, use path.dirname
+      let outputDir: string
+      let normalizedOutputPath: string
+      
+      if (process.env.VERCEL || process.platform !== 'win32') {
+        // On Vercel/Linux, outputPath is already in correct format, extract dir manually
+        const lastSlash = outputPath.lastIndexOf('/')
+        outputDir = lastSlash > 0 ? outputPath.substring(0, lastSlash) : this.tempDir
+        normalizedOutputPath = outputPath
+      } else {
+        // On Windows, use path.resolve
+        outputDir = path.resolve(path.dirname(outputPath))
+        normalizedOutputPath = path.resolve(outputPath)
+      }
       
       console.log(`🔍 Verifying output directory: ${outputDir}`)
       console.log(`🔍 Normalized output path: ${normalizedOutputPath}`)
+      console.log(`🔍 Path check - contains backslashes: ${outputDir.includes('\\')}`)
       
       // Force create directory with recursive option
       try {
@@ -399,7 +411,9 @@ export class VideoProcessor {
         }
         
         // Check if we can write to the directory (test write permissions)
-        const testFile = path.join(outputDir, '.write_test')
+        const testFile = (process.env.VERCEL || process.platform !== 'win32')
+          ? `${outputDir}/.write_test`
+          : path.join(outputDir, '.write_test')
         try {
           fs.writeFileSync(testFile, 'test')
           fs.unlinkSync(testFile)
@@ -418,7 +432,10 @@ export class VideoProcessor {
       }
       
       // Use normalized absolute path for input and output
-      const normalizedInputPath = path.resolve(inputPath)
+      // On Vercel/Linux, avoid path.resolve (it converts to Windows paths)
+      const normalizedInputPath = (process.env.VERCEL || process.platform !== 'win32')
+        ? inputPath
+        : path.resolve(inputPath)
       console.log(`📹 Normalized input path: ${normalizedInputPath}`)
       console.log(`📹 Normalized output path: ${normalizedOutputPath}`)
       
@@ -568,23 +585,46 @@ export class VideoProcessor {
       }
       
       // Use normalized absolute path for output
-      // Ensure output file path is valid and directory exists
-      const finalOutputPath = path.resolve(normalizedOutputPath).replace(/\\/g, '/')
-      const finalOutputDir = path.dirname(finalOutputPath).replace(/\\/g, '/')
+      // On Vercel/Linux, paths are already correct; on Windows, normalize
+      let finalOutputPath: string
+      let finalOutputDir: string
+      
+      if (process.env.VERCEL || process.platform !== 'win32') {
+        // On Vercel/Linux, paths are already correct
+        finalOutputPath = normalizedOutputPath
+        const lastSlash = normalizedOutputPath.lastIndexOf('/')
+        finalOutputDir = lastSlash > 0 ? normalizedOutputPath.substring(0, lastSlash) : this.tempDir
+      } else {
+        // On Windows, normalize and replace backslashes
+        finalOutputPath = path.resolve(normalizedOutputPath).replace(/\\/g, '/')
+        finalOutputDir = path.dirname(finalOutputPath).replace(/\\/g, '/')
+      }
+      
+      console.log(`📁 Final output path: ${finalOutputPath}`)
+      console.log(`📁 Final output dir: ${finalOutputDir}`)
+      console.log(`📁 Final path check - contains backslashes: ${finalOutputPath.includes('\\')}`)
       
       // Double-check directory exists right before FFmpeg runs
-      const finalOutputDirWindows = finalOutputDir.replace(/\//g, '\\')
-      if (!fs.existsSync(finalOutputDirWindows)) {
-        fs.mkdirSync(finalOutputDirWindows, { recursive: true })
-        console.log(`📁 Re-created output directory: ${finalOutputDirWindows}`)
+      // On Vercel/Linux, use paths as-is; on Windows, convert to Windows format
+      const finalOutputDirForFS = (process.env.VERCEL || process.platform !== 'win32')
+        ? finalOutputDir
+        : finalOutputDir.replace(/\//g, '\\')
+      
+      if (!fs.existsSync(finalOutputDirForFS)) {
+        console.log(`📁 Creating directory: ${finalOutputDirForFS}`)
+        fs.mkdirSync(finalOutputDirForFS, { recursive: true })
+        console.log(`📁 Re-created output directory: ${finalOutputDirForFS}`)
       }
       
       // Remove output file if it exists (FFmpeg might have issues with existing files)
-      const finalOutputPathWindows = finalOutputPath.replace(/\//g, '\\')
-      if (fs.existsSync(finalOutputPathWindows)) {
+      const finalOutputPathForFS = (process.env.VERCEL || process.platform !== 'win32')
+        ? finalOutputPath
+        : finalOutputPath.replace(/\//g, '\\')
+      
+      if (fs.existsSync(finalOutputPathForFS)) {
         try {
-          fs.unlinkSync(finalOutputPathWindows)
-          console.log(`🗑️ Removed existing output file: ${finalOutputPathWindows}`)
+          fs.unlinkSync(finalOutputPathForFS)
+          console.log(`🗑️ Removed existing output file: ${finalOutputPathForFS}`)
         } catch (unlinkError) {
           console.warn(`⚠️ Could not remove existing output file: ${unlinkError}`)
         }
@@ -592,13 +632,15 @@ export class VideoProcessor {
       
       // Ensure output directory is writable
       try {
-        const testFile = path.join(finalOutputDirWindows, `.write_test_${Date.now()}`)
+        const testFile = (process.env.VERCEL || process.platform !== 'win32')
+          ? `${finalOutputDirForFS}/.write_test_${Date.now()}`
+          : path.join(finalOutputDirForFS, `.write_test_${Date.now()}`)
         fs.writeFileSync(testFile, 'test')
         fs.unlinkSync(testFile)
-        console.log(`✅ Output directory is writable: ${finalOutputDirWindows}`)
+        console.log(`✅ Output directory is writable: ${finalOutputDirForFS}`)
       } catch (writeError) {
         console.error(`❌ Output directory is not writable: ${writeError}`)
-        reject(new Error(`Cannot write to output directory: ${finalOutputDirWindows}`))
+        reject(new Error(`Cannot write to output directory: ${finalOutputDirForFS}`))
         return
       }
       
@@ -609,9 +651,9 @@ export class VideoProcessor {
         .on('start', (commandLine) => {
           console.log('🚀 FFmpeg command:', commandLine)
           console.log(`📁 Output file path (FFmpeg): ${finalOutputPath}`)
-          console.log(`📁 Output file path (Windows): ${finalOutputPathWindows}`)
-          console.log(`📁 Output directory exists: ${fs.existsSync(finalOutputDirWindows)}`)
-          console.log(`📁 Output file exists before FFmpeg: ${fs.existsSync(finalOutputPathWindows)}`)
+          console.log(`📁 Output file path (FileSystem): ${finalOutputPathForFS}`)
+          console.log(`📁 Output directory exists: ${fs.existsSync(finalOutputDirForFS)}`)
+          console.log(`📁 Output file exists before FFmpeg: ${fs.existsSync(finalOutputPathForFS)}`)
         })
         .on('progress', (progress) => {
           if (!isImage) {
