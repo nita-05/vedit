@@ -200,14 +200,19 @@ export class VideoProcessor {
     console.log('📋 Instruction:', JSON.stringify(instruction, null, 2))
     
     // Check if FFmpeg is available before processing
+    // On Vercel, be lenient - the check will always resolve, errors will show during actual FFmpeg use
     try {
       await this.checkFFmpegAvailability()
-      console.log('✅ FFmpeg check passed, proceeding with video processing')
+      console.log('✅ FFmpeg check completed, proceeding with video processing')
     } catch (ffmpegError: any) {
-      console.error('❌ FFmpeg not available:', ffmpegError)
-      // Still try to proceed - sometimes FFmpeg works even if check fails
-      console.warn('⚠️ FFmpeg check failed, but attempting to proceed anyway...')
-      // Don't throw immediately - let the actual FFmpeg command fail if it's not available
+      // Only reject on Windows/macOS if FFmpeg is definitely not available
+      // On Vercel, the check always resolves, so this shouldn't happen
+      if (isVercelOrLinux()) {
+        console.warn('⚠️ FFmpeg check had issues on Vercel, but continuing...')
+      } else {
+        console.error('❌ FFmpeg not available:', ffmpegError)
+        throw new Error(`FFmpeg is not available: ${ffmpegError?.message || 'FFmpeg check failed'}`)
+      }
     }
     
     // Ensure temp directory exists before processing
@@ -280,7 +285,54 @@ export class VideoProcessor {
 
   private async checkFFmpegAvailability(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // Check FFmpeg availability by trying to get version or encoders
+      // On Vercel/Linux, be more lenient - assume FFmpeg is available and let it fail during actual use if not
+      if (isVercelOrLinux()) {
+        console.log('ℹ️ Vercel/Linux detected - using lenient FFmpeg check')
+        // Try a quick check, but don't fail if it doesn't work
+        const { execSync } = require('child_process')
+        
+        try {
+          // Quick version check
+          try {
+            const versionOutput = execSync('ffmpeg -version', { 
+              stdio: 'pipe', 
+              timeout: 2000,
+              encoding: 'utf8'
+            })
+            if (versionOutput && versionOutput.includes('ffmpeg version')) {
+              const versionMatch = versionOutput.match(/ffmpeg version (\S+)/)
+              console.log(`✅ FFmpeg is available (verified)${versionMatch ? ` - version ${versionMatch[1]}` : ''}`)
+              resolve()
+              return
+            }
+          } catch (versionError) {
+            console.log('ℹ️ FFmpeg version check failed, but continuing (will try during actual use)')
+          }
+          
+          // Try to find FFmpeg in common paths
+          const commonPaths = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg']
+          for (const checkPath of commonPaths) {
+            if (fs.existsSync(checkPath)) {
+              ffmpeg.setFfmpegPath(checkPath)
+              console.log(`✅ FFmpeg found at: ${checkPath}`)
+              resolve()
+              return
+            }
+          }
+          
+          // On Vercel, assume FFmpeg is available in PATH even if check fails
+          console.log('ℹ️ FFmpeg check inconclusive on Vercel - proceeding (will fail during actual use if not available)')
+          resolve()
+          return
+        } catch (error: any) {
+          // On Vercel, be lenient - just log and continue
+          console.warn('⚠️ FFmpeg check error on Vercel, but continuing:', error?.message)
+          resolve()
+          return
+        }
+      }
+      
+      // On Windows/macOS, do a more thorough check
       const { execSync } = require('child_process')
       
       try {
@@ -301,7 +353,6 @@ export class VideoProcessor {
             return
           }
         } catch (versionError: any) {
-          // Version check failed, try method 2
           console.log('ℹ️ FFmpeg version check failed, trying encoder check...')
         }
         
