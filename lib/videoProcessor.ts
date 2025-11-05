@@ -140,7 +140,7 @@ export class VideoProcessor {
       }
       
       // Verify we can write to the directory
-      const testFile = process.platform !== 'win32' 
+      const testFile = isVercelOrLinux()
         ? `${this.tempDir}/.write_test_${Date.now()}`
         : path.join(this.tempDir, `.write_test_${Date.now()}`)
       try {
