@@ -4,20 +4,39 @@ import { v2 as cloudinary } from 'cloudinary'
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
 
-// Configure Cloudinary (moved inside to avoid initialization errors)
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || '',
-  api_key: process.env.CLOUDINARY_API_KEY || '',
-  api_secret: process.env.CLOUDINARY_API_SECRET || '',
-})
+// Initialize Cloudinary configuration
+function initializeCloudinary() {
+  try {
+    const cloudName = process.env.CLOUDINARY_CLOUD_NAME
+    const apiKey = process.env.CLOUDINARY_API_KEY
+    const apiSecret = process.env.CLOUDINARY_API_SECRET
+
+    if (!cloudName || !apiKey || !apiSecret) {
+      throw new Error('Missing Cloudinary environment variables')
+    }
+
+    cloudinary.config({
+      cloud_name: cloudName,
+      api_key: apiKey,
+      api_secret: apiSecret,
+    })
+
+    return true
+  } catch (error) {
+    console.error('Failed to initialize Cloudinary:', error)
+    return false
+  }
+}
 
 export async function POST(request: NextRequest) {
   const startTime = Date.now()
+  
+  // Ensure we always return JSON, even on unexpected errors
   try {
     console.log(`📤 Upload request received`)
-    // Validate Cloudinary configuration
-    if (!process.env.CLOUDINARY_CLOUD_NAME || !process.env.CLOUDINARY_API_KEY || !process.env.CLOUDINARY_API_SECRET) {
-      console.error('Missing Cloudinary environment variables')
+    
+    // Initialize and validate Cloudinary configuration
+    if (!initializeCloudinary()) {
       return NextResponse.json(
         { error: 'Cloudinary configuration is missing. Please set CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET environment variables.' },
         { status: 500 }
@@ -115,11 +134,19 @@ export async function POST(request: NextRequest) {
       errorMessage = error.message
     } else if (error?.error?.message) {
       errorMessage = error.error.message
+    } else if (typeof error === 'string') {
+      errorMessage = error
     }
 
+    // Always return JSON, never HTML
     return NextResponse.json(
       { error: errorMessage },
-      { status: 500 }
+      { 
+        status: 500,
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      }
     )
   }
 }
