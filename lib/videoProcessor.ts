@@ -18,6 +18,7 @@ function getFFmpegInstallerPath(): string | null {
     path.join(process.cwd(), '.next', 'server'), // Next.js build output
     '/var/task', // Vercel serverless function path
     '/var/task/.next/server', // Next.js in Vercel
+    '/var/task/node_modules', // Direct node_modules in Vercel
   ]
   
   // Try to get path from require.resolve (may fail, so wrap in try-catch)
@@ -25,8 +26,20 @@ function getFFmpegInstallerPath(): string | null {
     const resolvedPath = require.resolve('@ffmpeg-installer/ffmpeg')
     if (resolvedPath && typeof resolvedPath === 'string') {
       const dirPath = path.dirname(resolvedPath)
-      possibleBasePaths.push(dirPath)
+      possibleBasePaths.unshift(dirPath) // Add to front for priority
       console.log(`📦 Found module at: ${resolvedPath}, dir: ${dirPath}`)
+      
+      // Also try to resolve the linux-x64 package
+      try {
+        const linuxResolved = require.resolve('@ffmpeg-installer/ffmpeg-linux-x64')
+        if (linuxResolved) {
+          const linuxDir = path.dirname(linuxResolved)
+          possibleBasePaths.unshift(linuxDir)
+          console.log(`📦 Found Linux package at: ${linuxResolved}, dir: ${linuxDir}`)
+        }
+      } catch {
+        // Ignore
+      }
     }
   } catch (error: any) {
     console.log(`ℹ️ require.resolve failed: ${error?.message || 'unknown error'}`)
@@ -46,6 +59,13 @@ function getFFmpegInstallerPath(): string | null {
         return installerPath
       } else {
         console.log(`⚠️ Installer path doesn't exist: ${installerPath}`)
+        // Try to find it relative to the module
+        const moduleDir = path.dirname(require.resolve('@ffmpeg-installer/ffmpeg'))
+        const relativePath = path.join(moduleDir, installerPath)
+        if (fs.existsSync(relativePath)) {
+          console.log(`✅ Found FFmpeg at relative path: ${relativePath}`)
+          return relativePath
+        }
       }
     }
   } catch (error: any) {
@@ -63,6 +83,18 @@ function getFFmpegInstallerPath(): string | null {
     if (linuxFFmpeg && linuxFFmpeg.path && fs.existsSync(linuxFFmpeg.path)) {
       console.log(`✅ FFmpeg Linux package path: ${linuxFFmpeg.path}`)
       return linuxFFmpeg.path
+    } else if (linuxFFmpeg && linuxFFmpeg.path) {
+      // Try relative to the module
+      try {
+        const moduleDir = path.dirname(require.resolve('@ffmpeg-installer/ffmpeg-linux-x64'))
+        const relativePath = path.resolve(moduleDir, linuxFFmpeg.path)
+        if (fs.existsSync(relativePath)) {
+          console.log(`✅ Found FFmpeg at relative path: ${relativePath}`)
+          return relativePath
+        }
+      } catch {
+        // Continue to direct search
+      }
     }
   } catch (error: any) {
     console.log(`ℹ️ Linux FFmpeg package require failed: ${error?.message || 'unknown error'}`)
@@ -156,16 +188,47 @@ function isVercelOrLinuxEnv(): boolean {
 // Configure FFmpeg path - works on Windows, Linux (Vercel), and macOS
 let ffmpegPathSet = false
 
+// On Vercel/Linux, try to find and copy FFmpeg to /tmp early
+if (process.env.VERCEL === '1' || process.env.VERCEL_ENV !== undefined) {
+  try {
+    const installerPath = getFFmpegInstallerPath()
+    if (installerPath && fs.existsSync(installerPath)) {
+      const tmpFFmpegPath = '/tmp/ffmpeg'
+      try {
+        // Copy to /tmp if not already there
+        if (!fs.existsSync(tmpFFmpegPath)) {
+          console.log(`📋 Early copy: Copying FFmpeg to ${tmpFFmpegPath}...`)
+          const binaryData = fs.readFileSync(installerPath)
+          fs.writeFileSync(tmpFFmpegPath, binaryData)
+          execSync(`chmod +x "${tmpFFmpegPath}"`, { stdio: 'ignore' })
+          console.log(`✅ Early copy: FFmpeg copied to ${tmpFFmpegPath}`)
+        }
+        // Verify it works
+        execSync(`${tmpFFmpegPath} -version`, { stdio: 'pipe', timeout: 3000 })
+        ffmpeg.setFfmpegPath(tmpFFmpegPath)
+        ffmpegPathSet = true
+        console.log(`✅ Early init: Using FFmpeg from /tmp: ${tmpFFmpegPath}`)
+      } catch (error: any) {
+        console.log(`ℹ️ Early copy failed, will retry at runtime: ${error?.message}`)
+      }
+    }
+  } catch (error: any) {
+    console.log(`ℹ️ Early FFmpeg initialization failed: ${error?.message}`)
+  }
+}
+
 // Try to get FFmpeg installer path (lazy load)
 // Note: This may fail on Vercel due to platform package resolution, that's OK
-const ffmpegInstallerPath = getFFmpegInstallerPath()
-if (ffmpegInstallerPath) {
-  try {
-    ffmpeg.setFfmpegPath(ffmpegInstallerPath)
-    ffmpegPathSet = true
-    console.log(`✅ Using FFmpeg from @ffmpeg-installer: ${ffmpegInstallerPath}`)
-  } catch (setPathError) {
-    console.warn('⚠️ Failed to set FFmpeg installer path, will use system FFmpeg')
+if (!ffmpegPathSet) {
+  const ffmpegInstallerPath = getFFmpegInstallerPath()
+  if (ffmpegInstallerPath) {
+    try {
+      ffmpeg.setFfmpegPath(ffmpegInstallerPath)
+      ffmpegPathSet = true
+      console.log(`✅ Using FFmpeg from @ffmpeg-installer: ${ffmpegInstallerPath}`)
+    } catch (setPathError) {
+      console.warn('⚠️ Failed to set FFmpeg installer path, will use system FFmpeg')
+    }
   }
 }
 
@@ -543,11 +606,12 @@ export class VideoProcessor {
         }
       }
       
-      // Approach 3: Try to find FFmpeg in common Vercel serverless paths
+      // Approach 3: Try to find FFmpeg in common Vercel serverless paths and copy to /tmp
       const possibleBasePaths = [
         process.cwd(),
         '/var/task',
         '/var/task/.next/server',
+        '/var/task/node_modules',
         '/opt',
       ]
       
@@ -555,23 +619,38 @@ export class VideoProcessor {
         const possiblePaths = [
           path.join(basePath, 'node_modules', '@ffmpeg-installer', 'linux-x64', 'ffmpeg'),
           path.join(basePath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', 'ffmpeg'),
+          path.join(basePath, '@ffmpeg-installer', 'linux-x64', 'ffmpeg'),
+          path.join(basePath, '@ffmpeg-installer', 'ffmpeg', 'ffmpeg'),
         ]
         
         for (const checkPath of possiblePaths) {
           try {
             if (fs.existsSync(checkPath)) {
-              // Make executable
-              try {
-                execSync(`chmod +x "${checkPath}"`, { stdio: 'ignore' })
-              } catch {
-                // Ignore chmod errors
-              }
+              console.log(`✅ Found FFmpeg binary at: ${checkPath}`)
               
-              // Verify it works
-              execSync(`${checkPath} -version`, { stdio: 'pipe', timeout: 3000 })
-              ffmpeg.setFfmpegPath(checkPath)
-              console.log(`✅ FFmpeg found at: ${checkPath}`)
-              return
+              // Always copy to /tmp on Vercel since filesystem is read-only
+              const tmpFFmpegPath = '/tmp/ffmpeg'
+              try {
+                const binaryData = fs.readFileSync(checkPath)
+                fs.writeFileSync(tmpFFmpegPath, binaryData)
+                execSync(`chmod +x "${tmpFFmpegPath}"`, { stdio: 'ignore' })
+                execSync(`${tmpFFmpegPath} -version`, { stdio: 'pipe', timeout: 3000 })
+                ffmpeg.setFfmpegPath(tmpFFmpegPath)
+                console.log(`✅ Copied and using FFmpeg from /tmp: ${tmpFFmpegPath}`)
+                return
+              } catch (copyError: any) {
+                console.log(`⚠️ Failed to copy to /tmp, trying direct path: ${copyError?.message}`)
+                // Try direct path as fallback
+                try {
+                  execSync(`chmod +x "${checkPath}"`, { stdio: 'ignore' })
+                  execSync(`${checkPath} -version`, { stdio: 'pipe', timeout: 3000 })
+                  ffmpeg.setFfmpegPath(checkPath)
+                  console.log(`✅ Using FFmpeg directly from: ${checkPath}`)
+                  return
+                } catch {
+                  // Continue to next path
+                }
+              }
             }
           } catch {
             // Continue to next path
