@@ -12,9 +12,11 @@ try {
   if (ffmpegInstaller && ffmpegInstaller.path) {
     ffmpegInstallerPath = ffmpegInstaller.path
     console.log(`✅ FFmpeg installer found: ${ffmpegInstallerPath}`)
-    // Set FFmpeg path immediately
-    ffmpeg.setFfmpegPath(ffmpegInstallerPath)
-    console.log(`✅ FFmpeg path set from installer`)
+    // Set FFmpeg path immediately (path is guaranteed to be string here)
+    if (ffmpegInstallerPath) {
+      ffmpeg.setFfmpegPath(ffmpegInstallerPath)
+      console.log(`✅ FFmpeg path set from installer`)
+    }
   }
 } catch (error) {
   console.log('ℹ️ @ffmpeg-installer/ffmpeg not available, will use system FFmpeg')
