@@ -13,12 +13,19 @@ function getFFmpegInstallerPath(): string | null {
   console.log(`📁 __dirname equivalent check...`)
   
   // Build list of possible base paths (avoid require.resolve() at module load time)
+  // On Vercel serverless, the path is /var/task, and node_modules might be at different locations
+  const cwd = process.cwd()
   const possibleBasePaths: string[] = [
-    process.cwd(), // Standard Next.js path
-    path.join(process.cwd(), '.next', 'server'), // Next.js build output
+    cwd, // Standard Next.js path
+    path.join(cwd, '.next', 'server'), // Next.js build output
     '/var/task', // Vercel serverless function path
     '/var/task/.next/server', // Next.js in Vercel
     '/var/task/node_modules', // Direct node_modules in Vercel
+    '/var/task/.next/server/chunks', // Next.js chunks
+    '/var/task/.next/server/app', // Next.js app directory
+    // Also try parent directories
+    path.resolve(cwd, '..'),
+    path.resolve(cwd, '../..'),
   ]
   
   // Try to get path from require.resolve (may fail, so wrap in try-catch)
@@ -111,11 +118,25 @@ function getFFmpegInstallerPath(): string | null {
         continue
       }
       
-      const nodeModulesBase = path.join(basePath, 'node_modules', '@ffmpeg-installer')
-      console.log(`  📂 Checking: ${nodeModulesBase}`)
+      // Try multiple node_modules locations
+      const nodeModulesPaths = [
+        path.join(basePath, 'node_modules', '@ffmpeg-installer'),
+        path.join(basePath, '@ffmpeg-installer'), // In case node_modules is flattened
+        path.resolve(basePath, '..', 'node_modules', '@ffmpeg-installer'), // Parent node_modules
+        path.resolve(basePath, '../..', 'node_modules', '@ffmpeg-installer'), // Grandparent
+      ]
       
-      if (!fs.existsSync(nodeModulesBase)) {
-        console.log(`  ⚠️ @ffmpeg-installer directory doesn't exist`)
+      let nodeModulesBase: string | null = null
+      for (const nmPath of nodeModulesPaths) {
+        if (fs.existsSync(nmPath)) {
+          nodeModulesBase = nmPath
+          console.log(`  📂 Found @ffmpeg-installer at: ${nmPath}`)
+          break
+        }
+      }
+      
+      if (!nodeModulesBase) {
+        console.log(`  ⚠️ @ffmpeg-installer directory doesn't exist in base path: ${basePath}`)
         continue
       }
       
@@ -674,9 +695,33 @@ export class VideoProcessor {
       }
       
       // If we get here, we couldn't find FFmpeg
-      // But don't throw immediately - let fluent-ffmpeg try to find it in PATH
-      console.warn('⚠️ Could not find FFmpeg binary, but will try system PATH')
-      // Don't throw - let the actual FFmpeg command fail with a more descriptive error
+      // Try one more comprehensive search using getFFmpegInstallerPath
+      console.log('🔄 Performing comprehensive FFmpeg search as final attempt...')
+      const finalPath = getFFmpegInstallerPath()
+      if (finalPath && fs.existsSync(finalPath)) {
+        try {
+          // Make executable
+          try {
+            execSync(`chmod +x "${finalPath}"`, { stdio: 'ignore' })
+          } catch {
+            // Ignore chmod errors
+          }
+          
+          // Verify it works
+          execSync(`${finalPath} -version`, { stdio: 'pipe', timeout: 3000 })
+          ffmpeg.setFfmpegPath(finalPath)
+          console.log(`✅ FFmpeg found via comprehensive search: ${finalPath}`)
+          return
+        } catch (error: any) {
+          console.error(`❌ Final path found but not executable: ${finalPath}`, error?.message)
+        }
+      }
+      
+      // If still not found, log detailed info but don't throw
+      // Let the verification step in applyEdit handle the error
+      console.warn('⚠️ Could not find FFmpeg binary after all attempts')
+      console.warn('⚠️ Current working directory:', process.cwd())
+      console.warn('⚠️ Will try system PATH, but this is likely to fail on Vercel')
     } else {
       // On Windows/macOS, try installer first
       const installerPath = getFFmpegInstallerPath()
