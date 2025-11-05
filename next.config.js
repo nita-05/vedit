@@ -3,6 +3,12 @@ const nextConfig = {
   images: {
     domains: ['res.cloudinary.com', 'lh3.googleusercontent.com'],
   },
+  // Increase body size limit for file uploads (500MB = 524288000 bytes)
+  experimental: {
+    serverActions: {
+      bodySizeLimit: '500mb',
+    },
+  },
   async headers() {
     return [
       {

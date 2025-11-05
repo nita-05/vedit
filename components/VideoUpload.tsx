@@ -50,8 +50,38 @@ export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
         })
 
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}))
-          throw new Error(errorData.error || `Upload failed: ${response.statusText}`)
+          // Try to parse as JSON first
+          let errorData: any = {}
+          const contentType = response.headers.get('content-type')
+          
+          if (contentType && contentType.includes('application/json')) {
+            try {
+              errorData = await response.json()
+            } catch (e) {
+              console.error('Failed to parse JSON error response:', e)
+            }
+          } else {
+            // If HTML is returned, try to extract error message
+            try {
+              const htmlText = await response.text()
+              console.error('Server returned HTML instead of JSON:', htmlText.substring(0, 500))
+              
+              // Check for common error patterns
+              if (response.status === 413 || htmlText.includes('413') || htmlText.includes('PayloadTooLargeError')) {
+                errorData = { error: 'File size exceeds the maximum allowed size. Please upload a file smaller than 500MB. For larger files, consider compressing the video first.' }
+              } else if (response.status === 500) {
+                errorData = { error: 'Server error occurred during upload. Please check that all environment variables are configured correctly and try again.' }
+              } else {
+                errorData = { error: `Upload failed: Server returned ${response.status} ${response.statusText}. Please try again or contact support if the issue persists.` }
+              }
+            } catch (e) {
+              console.error('Failed to parse error response:', e)
+              errorData = { error: `Upload failed: ${response.status} ${response.statusText}` }
+            }
+          }
+          
+          const errorMessage = errorData.error || `Upload failed: ${response.statusText} (Status: ${response.status})`
+          throw new Error(errorMessage)
         }
 
         const data = await response.json()
