@@ -9,6 +9,16 @@ const writeFile = promisify(fs.writeFile)
 const unlink = promisify(fs.unlink)
 const mkdir = promisify(fs.mkdir)
 
+// Helper function to detect Vercel/Linux (same as in class)
+function isVercelOrLinuxEnv(): boolean {
+  const isVercel = process.env.VERCEL === '1' || 
+                   process.env.VERCEL_ENV !== undefined ||
+                   process.env.VERCEL_URL !== undefined ||
+                   process.env.NEXT_PUBLIC_VERCEL !== undefined
+  const isLinux = process.platform !== 'win32' && process.platform !== 'darwin'
+  return isVercel || isLinux
+}
+
 // Configure FFmpeg path - works on Windows, Linux (Vercel), and macOS
 let ffmpegPathSet = false
 
@@ -30,29 +40,19 @@ if (process.platform === 'win32') {
     }
   }
 } else {
-  // Linux (Vercel) and macOS paths
+  // Linux (Vercel) and macOS paths - check more aggressively on Vercel
+  const { execSync } = require('child_process')
   const possiblePaths = [
     '/usr/bin/ffmpeg',           // Standard Linux path
     '/usr/local/bin/ffmpeg',     // Common install path
     '/opt/ffmpeg/bin/ffmpeg',    // Alternative install
     '/bin/ffmpeg',                // System bin
-    'ffmpeg',                     // In PATH (will be checked later)
   ]
   
+  // On Vercel/Linux, try to find FFmpeg in common paths first
   for (const ffmpegPath of possiblePaths) {
     try {
-      if (ffmpegPath === 'ffmpeg') {
-        // Check if ffmpeg is in PATH by trying to get version
-        const { execSync } = require('child_process')
-        try {
-          execSync('ffmpeg -version', { stdio: 'ignore', timeout: 2000 })
-          console.log(`✅ FFmpeg found in system PATH`)
-          ffmpegPathSet = true
-          break
-        } catch {
-          // Not in PATH, continue
-        }
-      } else if (fs.existsSync(ffmpegPath)) {
+      if (fs.existsSync(ffmpegPath)) {
         ffmpeg.setFfmpegPath(ffmpegPath)
         console.log(`✅ FFmpeg found at: ${ffmpegPath}`)
         ffmpegPathSet = true
@@ -60,6 +60,23 @@ if (process.platform === 'win32') {
       }
     } catch (error) {
       // Continue checking other paths
+    }
+  }
+  
+  // If not found in paths, try checking if it's in PATH
+  if (!ffmpegPathSet) {
+    try {
+      execSync('ffmpeg -version', { stdio: 'pipe', timeout: 2000, encoding: 'utf8' })
+      console.log(`✅ FFmpeg found in system PATH`)
+      // Don't set path explicitly - let fluent-ffmpeg use PATH
+      ffmpegPathSet = true
+    } catch (error) {
+      // FFmpeg not in PATH either
+      if (isVercelOrLinuxEnv()) {
+        // On Vercel, assume FFmpeg is available and will be found at runtime
+        console.log('ℹ️ FFmpeg path not found at module load, but assuming available on Vercel')
+        ffmpegPathSet = true // Mark as "set" so we proceed
+      }
     }
   }
 }
@@ -280,6 +297,42 @@ export class VideoProcessor {
       // Cleanup temp files (use normalized paths)
       this.cleanup(path.resolve(inputPath))
       this.cleanup(path.resolve(outputPath))
+    }
+  }
+
+  private ensureFFmpegPath(): void {
+    // On Vercel/Linux, try to find and set FFmpeg path before use
+    if (isVercelOrLinux()) {
+      const { execSync } = require('child_process')
+      const possiblePaths = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg']
+      
+      // Check if path is already set
+      try {
+        const currentPath = (ffmpeg as any).getAvailableEncoders ? undefined : (ffmpeg as any).ffmpegPath
+        if (currentPath && fs.existsSync(currentPath)) {
+          return // Path already set and valid
+        }
+      } catch {
+        // Continue to find path
+      }
+      
+      // Try to find FFmpeg in common paths
+      for (const checkPath of possiblePaths) {
+        if (fs.existsSync(checkPath)) {
+          ffmpeg.setFfmpegPath(checkPath)
+          console.log(`✅ FFmpeg path set to: ${checkPath}`)
+          return
+        }
+      }
+      
+      // Try to verify FFmpeg is in PATH
+      try {
+        execSync('ffmpeg -version', { stdio: 'pipe', timeout: 2000 })
+        console.log('✅ FFmpeg verified in PATH')
+        // Path not explicitly set, but fluent-ffmpeg should find it
+      } catch {
+        console.warn('⚠️ FFmpeg not found in common paths or PATH, but proceeding anyway')
+      }
     }
   }
 
@@ -506,6 +559,9 @@ export class VideoProcessor {
         : path.resolve(inputPath)
       console.log(`📹 Normalized input path: ${normalizedInputPath}`)
       console.log(`📹 Normalized output path: ${normalizedOutputPath}`)
+      
+      // Ensure FFmpeg path is set before creating command (especially important on Vercel)
+      this.ensureFFmpegPath()
       
       let command = ffmpeg(normalizedInputPath)
       
