@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { v2 as cloudinary } from 'cloudinary'
 
-// Force dynamic rendering
+// Force dynamic rendering - critical for file uploads
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 export const maxDuration = 60 // 60 seconds (capped at 10s on free tier, full 60s on Pro plan)
+
+// Route segment config to ensure proper handling
+export const fetchCache = 'force-no-store'
+export const revalidate = 0
 
 // Initialize Cloudinary configuration - ensure it doesn't throw synchronously
 let cloudinaryInitialized = false
@@ -70,7 +74,7 @@ const safeJsonResponse = (error: any, status: number = 500) => {
   )
 }
 
-async function handleUpload(request: NextRequest) {
+async function handleUpload(request: NextRequest): Promise<NextResponse> {
   // Top-level error handler to catch any initialization errors
   // IMPORTANT: Vercel serverless functions have platform-level body size limits:
   // - Hobby plan: ~4.5MB
@@ -80,6 +84,10 @@ async function handleUpload(request: NextRequest) {
   // The client-side code now handles HTML error responses gracefully.
   
   try {
+    // Validate request exists
+    if (!request) {
+      return safeJsonResponse(new Error('Invalid request object'), 400)
+    }
     const startTime = Date.now()
     const environment = process.env.VERCEL ? 'production (Vercel)' : 'development'
     console.log(`📤 Upload request received at ${new Date().toISOString()} (${environment})`)
@@ -126,32 +134,53 @@ async function handleUpload(request: NextRequest) {
       )
     }
 
+    // Try to parse form data with comprehensive error handling
     let formData: FormData
     try {
-      formData = await request.formData()
+      // This might fail if Vercel rejects the request before it reaches us
+      formData = await Promise.race([
+        request.formData(),
+        new Promise<never>((_, reject) => 
+          setTimeout(() => reject(new Error('Form data parsing timeout')), 10000)
+        )
+      ])
     } catch (error: any) {
       console.error('❌ Failed to parse form data:', error)
+      console.error('Error type:', typeof error)
+      console.error('Error constructor:', error?.constructor?.name)
+      
       // Check if error is due to body size limit
-      const errorMessage = error?.message || String(error)
-      if (errorMessage.includes('body') || errorMessage.includes('size') || errorMessage.includes('413') || errorMessage.includes('PayloadTooLargeError')) {
-        return NextResponse.json(
-          { error: 'File size exceeds the maximum allowed size. Please upload a file smaller than 500MB. For larger files, consider compressing the video first.' },
-          { 
-            status: 413,
-            headers: {
-              'Content-Type': 'application/json',
-            }
-          }
+      const errorMessage = error?.message || String(error) || 'Unknown error'
+      const errorString = errorMessage.toLowerCase()
+      
+      if (
+        errorString.includes('body') || 
+        errorString.includes('size') || 
+        errorString.includes('413') || 
+        errorString.includes('payloadtoolarge') ||
+        errorString.includes('entity too large') ||
+        errorString.includes('request entity too large') ||
+        errorString.includes('content-length') ||
+        errorString.includes('exceeded')
+      ) {
+        return safeJsonResponse(
+          new Error('File size exceeds the maximum allowed size. Please upload a file smaller than 500MB. For larger files, consider compressing the video first.'),
+          413
         )
       }
-      return NextResponse.json(
-        { error: `Failed to parse form data: ${errorMessage}. Please ensure the request is properly formatted and the file size is within limits.` },
-        { 
-          status: 400,
-          headers: {
-            'Content-Type': 'application/json',
-          }
-        }
+      
+      // Check for timeout
+      if (errorString.includes('timeout')) {
+        return safeJsonResponse(
+          new Error('Request timeout while parsing form data. The file might be too large or the connection is slow.'),
+          408
+        )
+      }
+      
+      // Generic form data parsing error
+      return safeJsonResponse(
+        new Error(`Failed to parse form data: ${errorMessage}. Please ensure the request is properly formatted and the file size is within limits.`),
+        400
       )
     }
 
@@ -406,12 +435,82 @@ async function handleUpload(request: NextRequest) {
 }
 
 // Export with wrapper to catch any errors at the framework level
-export async function POST(request: NextRequest) {
+// This wrapper ensures we ALWAYS return JSON, never HTML
+export async function POST(request: NextRequest): Promise<NextResponse> {
+  // Log immediately to confirm handler is called
+  console.log('🚀 POST /api/upload called at', new Date().toISOString())
+  
   try {
-    return await handleUpload(request)
+    // Try to get the request body size early - this might fail if Vercel rejects it
+    try {
+      const contentLength = request.headers.get('content-length')
+      if (contentLength) {
+        const sizeInBytes = parseInt(contentLength)
+        console.log(`📦 Request size: ${(sizeInBytes / (1024 * 1024)).toFixed(2)}MB`)
+        // Vercel Hobby plan limit is ~4.5MB, Pro is ~50MB
+        if (process.env.VERCEL && sizeInBytes > 4.5 * 1024 * 1024) {
+          console.warn(`⚠️ File size (${(sizeInBytes / (1024 * 1024)).toFixed(2)}MB) may exceed Vercel limits`)
+        }
+      }
+    } catch (headerError) {
+      console.warn('⚠️ Could not read content-length header:', headerError)
+    }
+
+    // Call the actual handler
+    const response = await handleUpload(request)
+    
+    // Ensure response has JSON content type
+    if (response && response instanceof NextResponse) {
+      response.headers.set('Content-Type', 'application/json')
+      console.log('✅ Returning successful response')
+      return response
+    }
+    
+    // Fallback if handler returns null/undefined
+    console.error('❌ Handler returned invalid response:', response)
+    return safeJsonResponse(new Error('Handler returned no response'), 500)
   } catch (error: any) {
-    // Catch any errors that escape the handler (shouldn't happen, but safety net)
-    console.error('❌ Critical error in upload handler:', error)
-    return safeJsonResponse(error, 500)
+    // Catch ANY error that escapes - this is critical
+    console.error('❌ CRITICAL ERROR in upload POST handler wrapper')
+    console.error('Error message:', error?.message)
+    console.error('Error name:', error?.name)
+    console.error('Error stack:', error?.stack)
+    
+    try {
+      console.error('Error stringified:', JSON.stringify(error, Object.getOwnPropertyNames(error)))
+    } catch (stringifyError) {
+      console.error('Could not stringify error:', stringifyError)
+    }
+    
+    // ALWAYS return JSON, never let Next.js return HTML
+    // This is the last line of defense
+    try {
+      return NextResponse.json(
+        { 
+          error: error?.message || error?.toString() || 'An unexpected error occurred during upload',
+          type: error?.constructor?.name || typeof error,
+          details: process.env.NODE_ENV === 'development' ? String(error) : undefined
+        },
+        { 
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        }
+      )
+    } catch (jsonError: any) {
+      // Even NextResponse.json failed - this is very bad
+      console.error('❌❌❌ CRITICAL: Could not create JSON response:', jsonError)
+      // Return a plain response with JSON string
+      return new NextResponse(
+        JSON.stringify({ error: 'Critical server error' }),
+        {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        }
+      )
+    }
   }
 }
