@@ -40,105 +40,87 @@ export default function VideoUpload({ onUploadComplete }: VideoUploadProps) {
       setUploadProgress(prev => ({ ...prev, [fileKey]: 0 }))
 
       try {
+        // Get upload signature from our API
+        const timestamp = Math.round(new Date().getTime() / 1000)
+        let signatureData: any
+        
+        try {
+          const sigResponse = await fetch('/api/upload/signature', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ timestamp, folder: 'vedit' }),
+          })
+          
+          if (!sigResponse.ok) {
+            const sigError = await sigResponse.json().catch(() => ({ error: 'Failed to get upload signature' }))
+            throw new Error(sigError.error || 'Failed to get upload signature')
+          }
+          
+          signatureData = await sigResponse.json()
+        } catch (sigError: any) {
+          throw new Error(`Failed to get upload signature: ${sigError?.message || 'Unknown error'}`)
+        }
+
+        // Upload directly to Cloudinary from client
+        const cloudinaryUrl = `https://api.cloudinary.com/v1_1/${signatureData.cloudName}/${isVideo ? 'video' : 'image'}/upload`
+        
         const formData = new FormData()
         formData.append('file', file)
-        // Note: Using signed uploads with API key/secret, so upload_preset not needed
+        formData.append('api_key', signatureData.apiKey)
+        formData.append('timestamp', signatureData.timestamp.toString())
+        formData.append('signature', signatureData.signature)
+        formData.append('folder', 'vedit')
 
-        let response: Response
-        try {
-          response = await fetch('/api/upload', {
-            method: 'POST',
-            body: formData,
-          })
-        } catch (fetchError: any) {
-          // Network error or fetch failed
-          throw new Error(`Network error: ${fetchError?.message || 'Failed to connect to server. Please check your connection and try again.'}`)
-        }
-
-        // Check content type before parsing - CRITICAL: Check before consuming body
-        const contentType = response.headers.get('content-type') || ''
-        const isJson = contentType.includes('application/json')
-
-        // Get response text first (can only read body once)
-        let responseText: string
-        try {
-          responseText = await response.text()
-        } catch (textError: any) {
-          console.error('Failed to read response text:', textError)
-          throw new Error(`Failed to read server response: ${textError?.message || 'Unknown error'}`)
-        }
-
-        if (!response.ok) {
-          // Handle error response
-          let errorData: any = {}
-          
-          if (isJson) {
-            try {
-              // Try to parse as JSON
-              errorData = JSON.parse(responseText)
-            } catch (e) {
-              console.error('Failed to parse JSON error response:', e)
-              // Even if content-type says JSON, it might be HTML
-              if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
-                console.error('Server returned HTML despite JSON content-type')
-                errorData = { error: 'Server returned HTML error page. This usually indicates a server configuration issue or the file is too large for the hosting platform.' }
-              } else {
-                errorData = { error: `Server error (${response.status}): ${response.statusText}` }
-              }
-            }
-          } else {
-            // HTML or other non-JSON response
-            console.error('Server returned non-JSON response:', responseText.substring(0, 500))
-            
-            // Check for common error patterns
-            if (response.status === 413 || responseText.includes('413') || responseText.includes('PayloadTooLargeError') || responseText.includes('Request Entity Too Large')) {
-              errorData = { error: 'File size exceeds the maximum allowed size. Please upload a file smaller than 500MB. For larger files, consider compressing the video first.' }
-            } else if (response.status === 500) {
-              if (responseText.includes('Cloudinary') || responseText.includes('CLOUDINARY')) {
-                errorData = { error: 'Cloudinary configuration error. Please check that all Cloudinary environment variables are set correctly.' }
-              } else {
-                errorData = { error: 'Server error occurred during upload. Please check that all environment variables are configured correctly and try again. If the problem persists, the file might be too large for the server to process.' }
-              }
-            } else if (response.status === 504 || responseText.includes('timeout') || responseText.includes('504')) {
-              errorData = { error: 'Upload timeout: The file took too long to upload. Please try a smaller file or check your connection.' }
-            } else {
-              errorData = { error: `Upload failed: Server returned ${response.status} ${response.statusText}. Please try again or contact support if the issue persists.` }
-            }
-          }
-          
-          const errorMessage = errorData.error || `Upload failed: ${response.statusText} (Status: ${response.status})`
-          throw new Error(errorMessage)
-        }
-
-        // Parse success response as JSON
-        let data: any
-        if (isJson) {
-          try {
-            data = JSON.parse(responseText)
-          } catch (e) {
-            console.error('Failed to parse JSON success response:', e)
-            if (responseText.trim().startsWith('<!DOCTYPE') || responseText.trim().startsWith('<html')) {
-              throw new Error('Server returned HTML instead of JSON. This indicates a server error.')
-            }
-            throw new Error('Server returned invalid JSON response. Please try again.')
-          }
-        } else {
-          // Shouldn't happen for success, but handle it
-          console.error('Server returned non-JSON success response:', responseText.substring(0, 200))
-          throw new Error('Server returned invalid response format. Please try again.')
-        }
+        // Upload with progress tracking
+        const xhr = new XMLHttpRequest()
         
-        if (!data.url || !data.publicId) {
-          throw new Error('Upload succeeded but received invalid response')
-        }
-        setUploadProgress(prev => ({ ...prev, [fileKey]: 100 }))
+        return new Promise<MediaItem>((resolve, reject) => {
+          xhr.upload.addEventListener('progress', (e) => {
+            if (e.lengthComputable) {
+              const progress = Math.round((e.loaded / e.total) * 100)
+              setUploadProgress(prev => ({ ...prev, [fileKey]: progress }))
+            }
+          })
 
-        return {
-          url: data.url,
-          publicId: data.publicId,
-          type: isVideo ? 'video' as const : 'image' as const,
-          name: file.name,
-        }
+          xhr.addEventListener('load', () => {
+            if (xhr.status >= 200 && xhr.status < 300) {
+              try {
+                const response = JSON.parse(xhr.responseText)
+                if (response.secure_url && response.public_id) {
+                  setUploadProgress(prev => ({ ...prev, [fileKey]: 100 }))
+                  resolve({
+                    url: response.secure_url,
+                    publicId: response.public_id,
+                    type: isVideo ? 'video' as const : 'image' as const,
+                    name: file.name,
+                  })
+                } else {
+                  reject(new Error('Invalid response from Cloudinary'))
+                }
+              } catch (parseError) {
+                reject(new Error('Failed to parse Cloudinary response'))
+              }
+            } else {
+              try {
+                const errorResponse = JSON.parse(xhr.responseText)
+                reject(new Error(errorResponse.error?.message || `Upload failed with status ${xhr.status}`))
+              } catch {
+                reject(new Error(`Upload failed with status ${xhr.status}: ${xhr.statusText}`))
+              }
+            }
+          })
+
+          xhr.addEventListener('error', () => {
+            reject(new Error('Network error during upload'))
+          })
+
+          xhr.addEventListener('abort', () => {
+            reject(new Error('Upload was aborted'))
+          })
+
+          xhr.open('POST', cloudinaryUrl)
+          xhr.send(formData)
+        })
       } catch (error) {
         console.error(`Upload error for ${file.name}:`, error)
         throw error
