@@ -682,6 +682,41 @@ export class VideoProcessor {
       // Ensure FFmpeg path is set before creating command (especially important on Vercel)
       this.ensureFFmpegPath()
       
+      // Verify FFmpeg is actually available before proceeding
+      const { execSync } = require('child_process')
+      let ffmpegVerified = false
+      try {
+        const ffmpegModule = ffmpeg as any
+        const ffmpegPath = ffmpegModule.ffmpegPath
+        
+        if (ffmpegPath) {
+          // Try to run FFmpeg with the set path
+          execSync(`${ffmpegPath} -version`, { stdio: 'pipe', timeout: 3000 })
+          console.log(`✅ FFmpeg verified at path: ${ffmpegPath}`)
+          ffmpegVerified = true
+        } else {
+          // Try without explicit path
+          execSync('ffmpeg -version', { stdio: 'pipe', timeout: 3000 })
+          console.log(`✅ FFmpeg verified in PATH`)
+          ffmpegVerified = true
+        }
+      } catch (verifyError: any) {
+        console.error('❌ FFmpeg verification failed!')
+        console.error('❌ Verification error:', {
+          message: verifyError?.message,
+          code: verifyError?.code,
+        })
+        const ffmpegModule = ffmpeg as any
+        console.error('❌ Current FFmpeg path setting:', ffmpegModule.ffmpegPath || 'not set')
+        reject(new Error(`FFmpeg is not available. Verification failed: ${verifyError?.message || 'FFmpeg not found in PATH'}`))
+        return
+      }
+      
+      if (!ffmpegVerified) {
+        reject(new Error('FFmpeg verification failed - FFmpeg is not available'))
+        return
+      }
+      
       let command = ffmpeg(normalizedInputPath)
       
       // For images, treat as single-frame video with loop
