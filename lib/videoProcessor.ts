@@ -201,10 +201,20 @@ export class VideoProcessor {
     
     // Determine output format - keep images as images, videos as videos
     const outputExt = isImage ? (inputPath.match(/\.(\w+)$/)?.[1] || 'png') : 'mp4'
-    const outputPath = path.join(this.tempDir, `output_${Date.now()}.${outputExt}`)
     
-    // Ensure output directory exists
-    const outputDir = path.dirname(outputPath)
+    // On Vercel/Linux, construct path manually with forward slashes (avoid path.join)
+    const outputPath = (process.env.VERCEL || process.platform !== 'win32')
+      ? `${this.tempDir}/output_${Date.now()}.${outputExt}`
+      : path.join(this.tempDir, `output_${Date.now()}.${outputExt}`)
+    
+    console.log(`📁 Output path: ${outputPath}`)
+    console.log(`📁 Output path check - contains backslashes: ${outputPath.includes('\\')}`)
+    
+    // Ensure output directory exists - use tempDir directly on Vercel
+    const outputDir = (process.env.VERCEL || process.platform !== 'win32')
+      ? this.tempDir
+      : path.dirname(outputPath)
+    
     if (!fs.existsSync(outputDir)) {
       fs.mkdirSync(outputDir, { recursive: true })
       console.log(`📁 Created output directory: ${outputDir}`)
@@ -212,8 +222,10 @@ export class VideoProcessor {
 
     try {
       await this.applyEdit(inputPath, outputPath, instruction, isImage)
-      // Use platform-agnostic path resolution
-      const normalizedOutputPath = path.resolve(outputPath)
+      // On Vercel/Linux, don't use path.resolve (it converts to Windows paths)
+      const normalizedOutputPath = (process.env.VERCEL || process.platform !== 'win32')
+        ? outputPath
+        : path.resolve(outputPath)
       
       console.log(`✅ ${isImage ? 'Image' : 'Video'} editing completed: ${normalizedOutputPath}`)
       
@@ -340,8 +352,14 @@ export class VideoProcessor {
     // Detect file extension from URL or use default
     const extMatch = url.match(/\.(\w+)(\?|$)/)
     const ext = extMatch ? extMatch[1] : 'mp4'
-    // Use absolute normalized path
-    const inputPath = path.resolve(path.join(this.tempDir, `input_${Date.now()}.${ext}`))
+    
+    // On Vercel/Linux, construct path manually with forward slashes (avoid path.resolve/path.join)
+    const inputPath = (process.env.VERCEL || process.platform !== 'win32')
+      ? `${this.tempDir}/input_${Date.now()}.${ext}`
+      : path.resolve(path.join(this.tempDir, `input_${Date.now()}.${ext}`))
+    
+    console.log(`📁 Input path: ${inputPath}`)
+    console.log(`📁 Input path check - contains backslashes: ${inputPath.includes('\\')}`)
     
     // Ensure directory exists before writing
     this.ensureTempDir()
@@ -1287,8 +1305,10 @@ export class VideoProcessor {
     // Ensure temp directory exists
     this.ensureTempDir()
     
-    // Save ASS file to temp directory (use this.tempDir for consistency)
-    const subtitleFilePath = path.join(this.tempDir, `subtitles_${Date.now()}.ass`)
+    // Save ASS file to temp directory - use forward slashes on Vercel/Linux
+    const subtitleFilePath = (process.env.VERCEL || process.platform !== 'win32')
+      ? `${this.tempDir}/subtitles_${Date.now()}.ass`
+      : path.join(this.tempDir, `subtitles_${Date.now()}.ass`)
     fs.writeFileSync(subtitleFilePath, assContent, 'utf-8')
     console.log(`📝 Generated ASS file: ${subtitleFilePath}`)
 
@@ -1522,7 +1542,9 @@ export class VideoProcessor {
     quality = 'high'
   ): Promise<string> {
     const inputPath = await this.downloadVideo(videoUrl)
-    const outputPath = path.join(this.tempDir, `export_${Date.now()}.${format}`)
+    const outputPath = (process.env.VERCEL || process.platform !== 'win32')
+      ? `${this.tempDir}/export_${Date.now()}.${format}`
+      : path.join(this.tempDir, `export_${Date.now()}.${format}`)
 
     try {
       const crf = quality === 'high' ? 18 : quality === 'medium' ? 23 : 28
@@ -1870,18 +1892,26 @@ export class VideoProcessor {
         console.log(`✅ Downloaded clip ${i + 1}/${clipUrls.length}: ${inputPath}`)
       }
 
-      // Create concat file for FFmpeg
-      const concatFilePath = path.join(this.tempDir, `concat_${Date.now()}.txt`)
+      // Create concat file for FFmpeg - use forward slashes on Vercel/Linux
+      const concatFilePath = (process.env.VERCEL || process.platform !== 'win32')
+        ? `${this.tempDir}/concat_${Date.now()}.txt`
+        : path.join(this.tempDir, `concat_${Date.now()}.txt`)
       const concatLines = inputPaths.map(p => `file '${p.replace(/\\/g, '/')}'`).join('\n')
       await writeFile(concatFilePath, concatLines)
       console.log(`📝 Created concat file: ${concatFilePath}`)
 
-      // Output path for merged video
-      const outputPath = path.join(this.tempDir, `merged_${Date.now()}.mp4`)
-      const normalizedOutputPath = path.resolve(outputPath)
+      // Output path for merged video - use forward slashes on Vercel/Linux
+      const outputPath = (process.env.VERCEL || process.platform !== 'win32')
+        ? `${this.tempDir}/merged_${Date.now()}.mp4`
+        : path.join(this.tempDir, `merged_${Date.now()}.mp4`)
+      const normalizedOutputPath = (process.env.VERCEL || process.platform !== 'win32')
+        ? outputPath
+        : path.resolve(outputPath)
       
-      // Ensure output directory exists
-      const outputDir = path.dirname(normalizedOutputPath)
+      // Ensure output directory exists - use tempDir directly on Vercel
+      const outputDir = (process.env.VERCEL || process.platform !== 'win32')
+        ? this.tempDir
+        : path.dirname(normalizedOutputPath)
       if (!fs.existsSync(outputDir)) {
         fs.mkdirSync(outputDir, { recursive: true })
       }
