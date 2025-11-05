@@ -9,6 +9,13 @@ import fs from 'fs'
 import path from 'path'
 import ffmpeg from 'fluent-ffmpeg'
 
+// Route configuration for Vercel
+export const dynamic = 'force-dynamic'
+export const runtime = 'nodejs'
+export const maxDuration = 300 // 5 minutes for video processing
+export const fetchCache = 'force-no-store'
+export const revalidate = 0
+
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
   timeout: 30000, // Reduced to 30 seconds for faster responses
@@ -643,11 +650,36 @@ export async function POST(request: NextRequest) {
       processedUrl = await processor.mergeClips(clipUrls)
       console.log('✅ Merge completed successfully:', processedUrl)
     } else {
-      // Process the video/image editing instruction with FFmpeg server-side
-      // This already uploads to Cloudinary and returns the URL
-      console.log(`🎬 Starting ${isImage ? 'image' : 'video'} processing...`)
-      processedUrl = await processVideoEdit(videoPublicId, instruction, inputVideoUrl, isImage)
-      console.log(`✅ ${isImage ? 'Image' : 'Video'} processed successfully:`, processedUrl)
+      // Process the video/image editing instruction with FFmpeg
+      console.log(`🎬 Starting ${isImage ? 'image' : 'video'} processing with FFmpeg...`)
+      try {
+        processedUrl = await processVideoEdit(videoPublicId, instruction, inputVideoUrl, isImage)
+        console.log(`✅ ${isImage ? 'Image' : 'Video'} processed successfully:`, processedUrl)
+      } catch (processError: any) {
+        console.error('❌ Video processing failed:', processError)
+        console.error('📋 Error details:', {
+          message: processError?.message,
+          code: processError?.code,
+          stack: processError?.stack,
+        })
+        
+        // Check if it's an FFmpeg-specific error
+        const errorMessage = processError?.message?.toLowerCase() || ''
+        const isFFmpegError = errorMessage.includes('ffmpeg') || 
+                              errorMessage.includes('spawn') || 
+                              errorMessage.includes('enoent') ||
+                              processError?.code === 'ENOENT'
+        
+        return NextResponse.json(
+          { 
+            error: processError?.message || 'Video processing failed',
+            message: `Failed to process video: ${processError?.message || 'Unknown error'}. ${isFFmpegError ? 'This may be an FFmpeg-related error. Please check server logs for details.' : 'Please check server logs for details.'}`,
+            videoUrl: null,
+            details: process.env.NODE_ENV === 'development' ? processError?.stack : undefined
+          },
+          { status: 500 }
+        )
+      }
     }
 
     // Extract public ID from Cloudinary URL for tracking
@@ -818,16 +850,34 @@ async function processVideoEdit(
     console.log(`✅ Processed ${resourceType} URL: ${processedUrl}`)
 
     return processedUrl
-  } catch (error) {
+  } catch (error: any) {
     console.error(`❌ ${isImage ? 'Image' : 'Video'} processing error:`, error)
-    console.error('📋 Error details:', error instanceof Error ? error.message : JSON.stringify(error))
-    // Fallback to original media if processing fails
-    const resourceType = isImage ? 'image' : 'video'
-    const resource = await cloudinary.api.resource(publicId, {
-      resource_type: resourceType,
+    console.error('📋 Error details:', {
+      message: error?.message,
+      stack: error?.stack,
+      code: error?.code,
+      name: error?.name,
+      fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
     })
-    console.warn(`⚠️ Returning original ${resourceType} as fallback`)
-    return resource.secure_url || ''
+    
+    // Check if it's an FFmpeg-related error (common on Vercel)
+    const errorMessage = error?.message?.toLowerCase() || ''
+    const isFFmpegError = errorMessage.includes('ffmpeg') || 
+                          errorMessage.includes('spawn') || 
+                          errorMessage.includes('enoent') ||
+                          error?.code === 'ENOENT'
+    
+    if (isFFmpegError) {
+      console.error('⚠️ FFmpeg error detected:', error?.message)
+      console.error('💡 Check FFmpeg installation and path configuration')
+    }
+    
+    // Throw error with detailed information for debugging
+    throw new Error(
+      `Video processing failed: ${error?.message || 'Unknown error'}. ` +
+      `Error code: ${error?.code || 'N/A'}. ` +
+      `Please check server logs for more details.`
+    )
   }
 }
 

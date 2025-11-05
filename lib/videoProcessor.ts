@@ -9,26 +9,63 @@ const writeFile = promisify(fs.writeFile)
 const unlink = promisify(fs.unlink)
 const mkdir = promisify(fs.mkdir)
 
-// Configure FFmpeg path if needed
-// Auto-detect FFmpeg on Windows
+// Configure FFmpeg path - works on Windows, Linux (Vercel), and macOS
+let ffmpegPathSet = false
+
 if (process.platform === 'win32') {
+  // Windows paths
   const possiblePaths = [
-    'C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe',      // Chocolatey (recommended)
-    'C:\\ffmpeg\\bin\\ffmpeg.exe',                       // Manual Gyan.dev installation
-    'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',        // Program Files installation
-    'C:\\tools\\ffmpeg\\bin\\ffmpeg.exe',                // Alternative manual install
+    'C:\\ProgramData\\chocolatey\\bin\\ffmpeg.exe',
+    'C:\\ffmpeg\\bin\\ffmpeg.exe',
+    'C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe',
+    'C:\\tools\\ffmpeg\\bin\\ffmpeg.exe',
   ]
   
   for (const ffmpegPath of possiblePaths) {
     if (fs.existsSync(ffmpegPath)) {
       ffmpeg.setFfmpegPath(ffmpegPath)
       console.log(`✅ FFmpeg found at: ${ffmpegPath}`)
+      ffmpegPathSet = true
       break
     }
   }
+} else {
+  // Linux (Vercel) and macOS paths
+  const possiblePaths = [
+    '/usr/bin/ffmpeg',           // Standard Linux path
+    '/usr/local/bin/ffmpeg',     // Common install path
+    '/opt/ffmpeg/bin/ffmpeg',    // Alternative install
+    '/bin/ffmpeg',                // System bin
+    'ffmpeg',                     // In PATH (will be checked later)
+  ]
   
-  // If no path found, FFmpeg will use system PATH
-  // Verify with: where ffmpeg
+  for (const ffmpegPath of possiblePaths) {
+    try {
+      if (ffmpegPath === 'ffmpeg') {
+        // Check if ffmpeg is in PATH by trying to get version
+        const { execSync } = require('child_process')
+        try {
+          execSync('ffmpeg -version', { stdio: 'ignore', timeout: 2000 })
+          console.log(`✅ FFmpeg found in system PATH`)
+          ffmpegPathSet = true
+          break
+        } catch {
+          // Not in PATH, continue
+        }
+      } else if (fs.existsSync(ffmpegPath)) {
+        ffmpeg.setFfmpegPath(ffmpegPath)
+        console.log(`✅ FFmpeg found at: ${ffmpegPath}`)
+        ffmpegPathSet = true
+        break
+      }
+    } catch (error) {
+      // Continue checking other paths
+    }
+  }
+}
+
+if (!ffmpegPathSet) {
+  console.log('ℹ️ FFmpeg path not explicitly set - will use system PATH or default')
 }
 
 interface VideoInstruction {
@@ -114,6 +151,17 @@ export class VideoProcessor {
     console.log(`🎬 Starting ${isImage ? 'image' : 'video'} processing...`)
     console.log('📋 Instruction:', JSON.stringify(instruction, null, 2))
     
+    // Check if FFmpeg is available before processing
+    try {
+      await this.checkFFmpegAvailability()
+      console.log('✅ FFmpeg check passed, proceeding with video processing')
+    } catch (ffmpegError: any) {
+      console.error('❌ FFmpeg not available:', ffmpegError)
+      // Still try to proceed - sometimes FFmpeg works even if check fails
+      console.warn('⚠️ FFmpeg check failed, but attempting to proceed anyway...')
+      // Don't throw immediately - let the actual FFmpeg command fail if it's not available
+    }
+    
     // Ensure temp directory exists before processing
     this.ensureTempDir()
     
@@ -133,30 +181,124 @@ export class VideoProcessor {
 
     try {
       await this.applyEdit(inputPath, outputPath, instruction, isImage)
-      // Use Windows path format for file system operations
+      // Use platform-agnostic path resolution
       const normalizedOutputPath = path.resolve(outputPath)
-      const normalizedOutputPathWindows = normalizedOutputPath.replace(/\//g, '\\')
       
-      console.log(`✅ ${isImage ? 'Image' : 'Video'} editing completed: ${normalizedOutputPathWindows}`)
+      console.log(`✅ ${isImage ? 'Image' : 'Video'} editing completed: ${normalizedOutputPath}`)
       
-      // Verify output file exists before upload (use Windows path format)
-      if (!fs.existsSync(normalizedOutputPathWindows)) {
-        throw new Error(`Output file not found after processing: ${normalizedOutputPathWindows}`)
+      // Verify output file exists before upload
+      if (!fs.existsSync(normalizedOutputPath)) {
+        throw new Error(`Output file not found after processing: ${normalizedOutputPath}`)
       }
-      console.log(`✅ Verified output file exists: ${normalizedOutputPathWindows}`)
       
-      const processedUrl = await this.uploadVideo(normalizedOutputPathWindows, 'vedit/processed', isImage)
+      // Check file size to ensure it's not empty
+      const stats = fs.statSync(normalizedOutputPath)
+      if (stats.size === 0) {
+        throw new Error(`Output file is empty (0 bytes): ${normalizedOutputPath}`)
+      }
+      
+      console.log(`✅ Verified output file exists (${(stats.size / 1024 / 1024).toFixed(2)}MB): ${normalizedOutputPath}`)
+      
+      const processedUrl = await this.uploadVideo(normalizedOutputPath, 'vedit/processed', isImage)
       console.log(`☁️ Uploaded to Cloudinary: ${processedUrl}`)
       
       return processedUrl
-    } catch (error) {
+    } catch (error: any) {
       console.error(`❌ ${isImage ? 'Image' : 'Video'} processing error:`, error)
+      console.error('Error details:', {
+        message: error?.message,
+        code: error?.code,
+        stack: error?.stack,
+      })
       throw error
     } finally {
       // Cleanup temp files (use normalized paths)
       this.cleanup(path.resolve(inputPath))
       this.cleanup(path.resolve(outputPath))
     }
+  }
+
+  private async checkFFmpegAvailability(): Promise<void> {
+    return new Promise((resolve, reject) => {
+      // Check FFmpeg availability by trying to get version or encoders
+      const { execSync } = require('child_process')
+      
+      try {
+        // Method 1: Try to get FFmpeg version directly (fastest check)
+        try {
+          const versionOutput = execSync('ffmpeg -version', { 
+            stdio: 'pipe', 
+            timeout: 3000,
+            encoding: 'utf8'
+          })
+          if (versionOutput && versionOutput.includes('ffmpeg version')) {
+            console.log('✅ FFmpeg is available (verified via version check)')
+            const versionMatch = versionOutput.match(/ffmpeg version (\S+)/)
+            if (versionMatch) {
+              console.log(`✅ FFmpeg version: ${versionMatch[1]}`)
+            }
+            resolve()
+            return
+          }
+        } catch (versionError: any) {
+          // Version check failed, try method 2
+          console.log('ℹ️ FFmpeg version check failed, trying encoder check...')
+        }
+        
+        // Method 2: Try to get available encoders via fluent-ffmpeg
+        ffmpeg.getAvailableEncoders((err, encoders) => {
+          if (err) {
+            console.error('❌ FFmpeg availability check failed:', err.message)
+            
+            // Method 3: Try common paths
+            const commonPaths = process.platform === 'win32' 
+              ? ['C:\\ffmpeg\\bin\\ffmpeg.exe', 'ffmpeg.exe']
+              : ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg', 'ffmpeg']
+            
+            let foundPath = false
+            for (const checkPath of commonPaths) {
+              try {
+                if (checkPath.includes('/') || checkPath.includes('\\')) {
+                  if (fs.existsSync(checkPath)) {
+                    ffmpeg.setFfmpegPath(checkPath)
+                    console.log(`✅ FFmpeg found at: ${checkPath}`)
+                    foundPath = true
+                    resolve()
+                    return
+                  }
+                } else {
+                  // Try to execute it
+                  try {
+                    execSync(`${checkPath} -version`, { stdio: 'pipe', timeout: 2000 })
+                    console.log(`✅ FFmpeg found in PATH: ${checkPath}`)
+                    foundPath = true
+                    resolve()
+                    return
+                  } catch {
+                    // Continue
+                  }
+                }
+              } catch {
+                // Continue checking
+              }
+            }
+            
+            if (!foundPath) {
+              reject(new Error(`FFmpeg not found. Tried: ${commonPaths.join(', ')}. Original error: ${err.message}`))
+            }
+          } else {
+            console.log('✅ FFmpeg is available (verified via encoder check)')
+            if (encoders && Object.keys(encoders).length > 0) {
+              console.log(`✅ FFmpeg has ${Object.keys(encoders).length} encoders available`)
+            }
+            resolve()
+          }
+        })
+      } catch (error: any) {
+        console.error('❌ FFmpeg check error:', error?.message)
+        reject(new Error(`FFmpeg availability check failed: ${error?.message || 'Unknown error'}`))
+      }
+    })
   }
 
   private async downloadVideo(url: string): Promise<string> {
@@ -1291,9 +1433,26 @@ export class VideoProcessor {
 
   async uploadVideo(filePath: string, folder = 'vedit/processed', isImage: boolean = false): Promise<string> {
     return new Promise((resolve, reject) => {
-      console.log(`☁️ Starting Cloudinary upload: ${filePath}`)
+      // Normalize file path for cross-platform compatibility
+      const normalizedPath = path.resolve(filePath)
+      
+      console.log(`☁️ Starting Cloudinary upload: ${normalizedPath}`)
       console.log(`☁️ Target folder: ${folder}`)
       console.log(`☁️ Resource type: ${isImage ? 'image' : 'video'}`)
+      
+      // Verify file exists before upload
+      if (!fs.existsSync(normalizedPath)) {
+        reject(new Error(`File not found for upload: ${normalizedPath}`))
+        return
+      }
+      
+      const stats = fs.statSync(normalizedPath)
+      if (stats.size === 0) {
+        reject(new Error(`File is empty (0 bytes): ${normalizedPath}`))
+        return
+      }
+      
+      console.log(`☁️ File size: ${(stats.size / 1024 / 1024).toFixed(2)}MB`)
       
       const resourceType = isImage ? 'image' : 'video'
       const uploadOptions: any = {
@@ -1306,12 +1465,12 @@ export class VideoProcessor {
         uploadOptions.eager = [{ format: 'mp4', quality: 'auto' }]
       } else {
         // For images, preserve original format or convert to PNG
-        const ext = filePath.match(/\.(\w+)$/)?.[1] || 'png'
+        const ext = normalizedPath.match(/\.(\w+)$/)?.[1] || 'png'
         uploadOptions.format = ext
       }
       
       cloudinary.uploader.upload(
-        filePath,
+        normalizedPath,
         uploadOptions,
         (error, result) => {
           if (error) {
