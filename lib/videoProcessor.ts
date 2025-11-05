@@ -5,21 +5,23 @@ import path from 'path'
 import os from 'os'
 import { promisify } from 'util'
 
-// Try to use FFmpeg installer if available (for Vercel/serverless)
-let ffmpegInstallerPath: string | null = null
-try {
-  const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
-  if (ffmpegInstaller && ffmpegInstaller.path) {
-    ffmpegInstallerPath = ffmpegInstaller.path
-    console.log(`✅ FFmpeg installer found: ${ffmpegInstallerPath}`)
-    // Set FFmpeg path immediately (path is guaranteed to be string here)
-    if (ffmpegInstallerPath) {
-      ffmpeg.setFfmpegPath(ffmpegInstallerPath)
-      console.log(`✅ FFmpeg path set from installer`)
+// Function to get FFmpeg installer path (lazy load to avoid module load issues)
+function getFFmpegInstallerPath(): string | null {
+  try {
+    const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
+    if (ffmpegInstaller && ffmpegInstaller.path) {
+      const installerPath = ffmpegInstaller.path
+      // Verify path exists
+      if (fs.existsSync(installerPath)) {
+        return installerPath
+      } else {
+        console.warn(`⚠️ FFmpeg installer path does not exist: ${installerPath}`)
+      }
     }
+  } catch (error: any) {
+    console.log('ℹ️ @ffmpeg-installer/ffmpeg not available:', error?.message || 'module not found')
   }
-} catch (error) {
-  console.log('ℹ️ @ffmpeg-installer/ffmpeg not available, will use system FFmpeg')
+  return null
 }
 
 const writeFile = promisify(fs.writeFile)
@@ -39,7 +41,8 @@ function isVercelOrLinuxEnv(): boolean {
 // Configure FFmpeg path - works on Windows, Linux (Vercel), and macOS
 let ffmpegPathSet = false
 
-// If FFmpeg installer is available, use it (especially for Vercel)
+// Try to get FFmpeg installer path (lazy load)
+const ffmpegInstallerPath = getFFmpegInstallerPath()
 if (ffmpegInstallerPath) {
   ffmpeg.setFfmpegPath(ffmpegInstallerPath)
   ffmpegPathSet = true
@@ -323,11 +326,20 @@ export class VideoProcessor {
   }
 
   private ensureFFmpegPath(): void {
-    // First, check if FFmpeg installer path is available (most reliable for Vercel)
-    if (ffmpegInstallerPath && fs.existsSync(ffmpegInstallerPath)) {
-      ffmpeg.setFfmpegPath(ffmpegInstallerPath)
-      console.log(`✅ Using FFmpeg from installer: ${ffmpegInstallerPath}`)
-      return
+    // First, try to get FFmpeg installer path (most reliable for Vercel)
+    const installerPath = getFFmpegInstallerPath()
+    if (installerPath && fs.existsSync(installerPath)) {
+      ffmpeg.setFfmpegPath(installerPath)
+      console.log(`✅ Using FFmpeg from installer: ${installerPath}`)
+      // Verify it's executable
+      try {
+        const { execSync } = require('child_process')
+        execSync(`${installerPath} -version`, { stdio: 'pipe', timeout: 2000 })
+        console.log(`✅ FFmpeg installer verified and executable`)
+        return
+      } catch (verifyError) {
+        console.warn(`⚠️ FFmpeg installer exists but not executable, trying other methods...`)
+      }
     }
     
     // On Vercel/Linux, aggressively try to find and set FFmpeg path before use
