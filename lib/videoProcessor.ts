@@ -386,81 +386,61 @@ export class VideoProcessor {
   }
 
   private ensureFFmpegPath(): void {
-    // On Vercel/Linux, use system FFmpeg (more reliable than installer)
+    // On Vercel/Linux, FFmpeg is NOT available system-wide
+    // We need to use the bundled binary from @ffmpeg-installer/ffmpeg
     if (isVercelOrLinux()) {
       const { execSync } = require('child_process')
       
-      // First, try 'which' command (most reliable on Linux)
-      try {
-        const whichPath = execSync('which ffmpeg', { encoding: 'utf8', timeout: 2000 }).trim()
-        if (whichPath && whichPath.length > 0 && fs.existsSync(whichPath)) {
+      // Try to find and copy FFmpeg binary from node_modules to /tmp
+      const installerPath = getFFmpegInstallerPath()
+      if (installerPath && fs.existsSync(installerPath)) {
+        // Copy to /tmp to ensure it's accessible
+        const tmpFFmpegPath = '/tmp/ffmpeg'
+        try {
+          // Copy binary to /tmp if not already there
+          if (!fs.existsSync(tmpFFmpegPath)) {
+            const binaryData = fs.readFileSync(installerPath)
+            fs.writeFileSync(tmpFFmpegPath, binaryData)
+            // Make executable
+            execSync(`chmod +x "${tmpFFmpegPath}"`, { stdio: 'ignore' })
+            console.log(`✅ Copied FFmpeg binary to ${tmpFFmpegPath}`)
+          }
+          
           // Verify it works
+          execSync(`${tmpFFmpegPath} -version`, { stdio: 'pipe', timeout: 2000 })
+          ffmpeg.setFfmpegPath(tmpFFmpegPath)
+          console.log(`✅ Using FFmpeg from /tmp: ${tmpFFmpegPath}`)
+          return
+        } catch (error: any) {
+          console.error(`❌ Failed to use FFmpeg from /tmp:`, error?.message)
+          // Try using the original path directly
           try {
-            execSync(`${whichPath} -version`, { stdio: 'pipe', timeout: 2000 })
-            ffmpeg.setFfmpegPath(whichPath)
-            console.log(`✅ FFmpeg found and set via 'which': ${whichPath}`)
+            execSync(`${installerPath} -version`, { stdio: 'pipe', timeout: 2000 })
+            ffmpeg.setFfmpegPath(installerPath)
+            console.log(`✅ Using FFmpeg from installer path: ${installerPath}`)
             return
           } catch (verifyError) {
-            console.warn(`⚠️ FFmpeg found at ${whichPath} but not executable`)
+            console.error(`❌ FFmpeg binary not executable at: ${installerPath}`)
           }
         }
-      } catch (whichError) {
-        console.log('ℹ️ which command failed, trying other methods...')
       }
       
-      // Try common system paths
-      const possiblePaths = [
-        '/usr/bin/ffmpeg',
-        '/usr/local/bin/ffmpeg',
-        '/bin/ffmpeg',
-      ]
-      
+      // Fallback: Try system paths (unlikely to work on Vercel)
+      const possiblePaths = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg']
       for (const checkPath of possiblePaths) {
         try {
           if (fs.existsSync(checkPath)) {
-            // Verify it's executable
-            try {
-              execSync(`${checkPath} -version`, { stdio: 'pipe', timeout: 2000 })
-              ffmpeg.setFfmpegPath(checkPath)
-              console.log(`✅ FFmpeg found and verified at: ${checkPath}`)
-              return
-            } catch (execError) {
-              // Continue to next path
-            }
+            execSync(`${checkPath} -version`, { stdio: 'pipe', timeout: 2000 })
+            ffmpeg.setFfmpegPath(checkPath)
+            console.log(`✅ FFmpeg found at system path: ${checkPath}`)
+            return
           }
-        } catch (error) {
-          // Continue checking
+        } catch {
+          // Continue
         }
       }
       
-      // Try FFmpeg installer as fallback (if available)
-      const installerPath = getFFmpegInstallerPath()
-      if (installerPath && fs.existsSync(installerPath)) {
-        try {
-          execSync(`${installerPath} -version`, { stdio: 'pipe', timeout: 2000 })
-          ffmpeg.setFfmpegPath(installerPath)
-          console.log(`✅ Using FFmpeg from installer: ${installerPath}`)
-          return
-        } catch (verifyError) {
-          console.warn(`⚠️ FFmpeg installer exists but not executable`)
-        }
-      }
-      
-      // Last resort: Verify FFmpeg is in PATH (don't set explicit path)
-      try {
-        const versionOutput = execSync('ffmpeg -version', { 
-          stdio: 'pipe', 
-          timeout: 2000,
-          encoding: 'utf8'
-        })
-        if (versionOutput && versionOutput.includes('ffmpeg version')) {
-          console.log('✅ FFmpeg verified in PATH (will use system PATH)')
-          // Don't set path - let fluent-ffmpeg use PATH
-          return
-        }
-      } catch (pathError: any) {
-        console.warn('⚠️ FFmpeg not found in PATH, but continuing (fluent-ffmpeg will try to find it)')
-      }
+      throw new Error('FFmpeg not found. @ffmpeg-installer/ffmpeg binary not accessible on Vercel.')
     } else {
       // On Windows/macOS, try installer first
       const installerPath = getFFmpegInstallerPath()

@@ -9,6 +9,15 @@ const nextConfig = {
       bodySizeLimit: '500mb',
     },
   },
+  // Webpack config to include FFmpeg binary in serverless functions
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      // Copy FFmpeg binary to the output
+      config.externals = config.externals || []
+      // Don't externalize @ffmpeg-installer/ffmpeg - include it in the bundle
+    }
+    return config
+  },
   async headers() {
     return [
       {
