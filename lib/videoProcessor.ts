@@ -81,11 +81,22 @@ export class VideoProcessor {
     // On Vercel, os.tmpdir() returns '/tmp'
     // On Windows, it returns 'C:\Users\...\AppData\Local\Temp'
     const systemTempDir = os.tmpdir()
-    this.tempDir = path.join(systemTempDir, 'vedit-temp')
+    
+    // Force Unix-style paths on Vercel/Linux even if path.resolve gives Windows-style
+    if (process.platform !== 'win32' || process.env.VERCEL) {
+      // On Linux/Vercel, always use forward slashes
+      this.tempDir = systemTempDir.endsWith('/') 
+        ? `${systemTempDir}vedit-temp`
+        : `${systemTempDir}/vedit-temp`
+    } else {
+      // On Windows, use path.join (will use backslashes)
+      this.tempDir = path.join(systemTempDir, 'vedit-temp')
+    }
     
     console.log(`📁 Using temp directory: ${this.tempDir}`)
     console.log(`📁 System temp: ${systemTempDir}`)
     console.log(`📁 Platform: ${process.platform}`)
+    console.log(`📁 VERCEL env: ${process.env.VERCEL || 'false'}`)
     
     // Ensure temp directory exists
     this.ensureTempDir()
@@ -93,9 +104,21 @@ export class VideoProcessor {
 
   private ensureTempDir() {
     try {
-      // Normalize path to handle Windows vs Unix differences
-      const normalizedTempDir = path.resolve(this.tempDir)
-      this.tempDir = normalizedTempDir
+      // On Vercel/Linux, ensure we use forward slashes and don't use path.resolve
+      // which might convert to Windows-style paths
+      if (process.env.VERCEL || process.platform !== 'win32') {
+        // Force Unix path format
+        this.tempDir = this.tempDir.replace(/\\/g, '/')
+        // Ensure it starts with /tmp
+        if (!this.tempDir.startsWith('/tmp')) {
+          this.tempDir = '/tmp/vedit-temp'
+        }
+      } else {
+        // On Windows, use path.resolve for proper normalization
+        this.tempDir = path.resolve(this.tempDir)
+      }
+      
+      console.log(`📁 Final temp directory path: ${this.tempDir}`)
       
       if (!fs.existsSync(this.tempDir)) {
         // Use recursive: true to create parent directories if needed
@@ -106,7 +129,9 @@ export class VideoProcessor {
       }
       
       // Verify we can write to the directory
-      const testFile = path.join(this.tempDir, `.write_test_${Date.now()}`)
+      const testFile = process.platform !== 'win32' 
+        ? `${this.tempDir}/.write_test_${Date.now()}`
+        : path.join(this.tempDir, `.write_test_${Date.now()}`)
       try {
         fs.writeFileSync(testFile, 'test')
         fs.unlinkSync(testFile)
@@ -122,20 +147,32 @@ export class VideoProcessor {
         code: error?.code,
         path: error?.path,
         syscall: error?.syscall,
+        attemptedPath: this.tempDir,
       })
       
-      // On Vercel, try /tmp directly if system temp fails
+      // On Vercel/Linux, try /tmp directly as fallback
       if (process.env.VERCEL || process.platform !== 'win32') {
-        console.log(`🔄 Trying /tmp directory as fallback...`)
+        console.log(`🔄 Trying /tmp/vedit-temp directory as fallback...`)
         try {
           this.tempDir = '/tmp/vedit-temp'
           if (!fs.existsSync(this.tempDir)) {
             fs.mkdirSync(this.tempDir, { recursive: true })
           }
           console.log(`✅ Using fallback temp directory: ${this.tempDir}`)
-        } catch (fallbackError) {
+          
+          // Verify fallback works
+          const testFile = `${this.tempDir}/.write_test_${Date.now()}`
+          fs.writeFileSync(testFile, 'test')
+          fs.unlinkSync(testFile)
+          console.log(`✅ Fallback temp directory is writable`)
+        } catch (fallbackError: any) {
           console.error(`❌ Fallback temp directory also failed: ${fallbackError}`)
-          throw new Error(`Cannot create temp directory. Original error: ${error?.message || error}`)
+          console.error(`❌ Fallback error details:`, {
+            message: fallbackError?.message,
+            code: fallbackError?.code,
+            path: fallbackError?.path,
+          })
+          throw new Error(`Cannot create temp directory. Original: ${error?.message || error}. Fallback: ${fallbackError?.message || fallbackError}`)
         }
       } else {
         throw error
