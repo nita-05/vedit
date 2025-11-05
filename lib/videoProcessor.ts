@@ -2097,6 +2097,9 @@ export class VideoProcessor {
         fs.mkdirSync(outputDir, { recursive: true })
       }
 
+      // Ensure FFmpeg path is set before merging
+      this.ensureFFmpegPath()
+      
       // Merge clips using FFmpeg concat demuxer
       return new Promise((resolve, reject) => {
         ffmpeg()
