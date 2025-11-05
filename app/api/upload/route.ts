@@ -4,7 +4,7 @@ import { v2 as cloudinary } from 'cloudinary'
 // Force dynamic rendering
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
-export const maxDuration = 60 // 60 seconds for large file uploads
+export const maxDuration = 60 // 60 seconds (capped at 10s on free tier, full 60s on Pro plan)
 
 // Initialize Cloudinary configuration
 function initializeCloudinary() {
@@ -199,8 +199,8 @@ export async function POST(request: NextRequest) {
     try {
       uploadResult = await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => {
-          reject(new Error('Upload timeout: The upload took too long to complete'))
-        }, 55000) // 55 seconds timeout (slightly less than maxDuration)
+          reject(new Error('Upload timeout: The upload took too long to complete. Please try a smaller file or check your connection.'))
+        }, 55000) // 55 seconds timeout (slightly less than 60s maxDuration)
 
         cloudinary.uploader
           .upload_stream(
