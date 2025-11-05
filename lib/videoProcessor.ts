@@ -77,26 +77,22 @@ export class VideoProcessor {
   private tempDir: string
 
   constructor() {
-    // Use system temp directory - works on both Windows and Unix (Vercel/Linux)
-    // On Vercel, os.tmpdir() returns '/tmp'
-    // On Windows, it returns 'C:\Users\...\AppData\Local\Temp'
-    const systemTempDir = os.tmpdir()
-    
-    // Force Unix-style paths on Vercel/Linux even if path.resolve gives Windows-style
-    if (process.platform !== 'win32' || process.env.VERCEL) {
-      // On Linux/Vercel, always use forward slashes
-      this.tempDir = systemTempDir.endsWith('/') 
-        ? `${systemTempDir}vedit-temp`
-        : `${systemTempDir}/vedit-temp`
+    // On Vercel/Linux, ALWAYS use /tmp/vedit-temp directly (no path manipulation)
+    // On Windows, use system temp directory
+    if (process.env.VERCEL || process.platform !== 'win32') {
+      // Vercel/Linux: Use explicit Unix path
+      this.tempDir = '/tmp/vedit-temp'
+      console.log(`📁 Vercel/Linux detected - using explicit path: ${this.tempDir}`)
     } else {
-      // On Windows, use path.join (will use backslashes)
+      // Windows: Use system temp directory
+      const systemTempDir = os.tmpdir()
       this.tempDir = path.join(systemTempDir, 'vedit-temp')
+      console.log(`📁 Windows detected - using system temp: ${this.tempDir}`)
     }
     
-    console.log(`📁 Using temp directory: ${this.tempDir}`)
-    console.log(`📁 System temp: ${systemTempDir}`)
     console.log(`📁 Platform: ${process.platform}`)
-    console.log(`📁 VERCEL env: ${process.env.VERCEL || 'false'}`)
+    console.log(`📁 VERCEL env: ${process.env.VERCEL || 'not set'}`)
+    console.log(`📁 Final temp directory: ${this.tempDir}`)
     
     // Ensure temp directory exists
     this.ensureTempDir()
@@ -104,24 +100,22 @@ export class VideoProcessor {
 
   private ensureTempDir() {
     try {
-      // On Vercel/Linux, ensure we use forward slashes and don't use path.resolve
-      // which might convert to Windows-style paths
+      // On Vercel/Linux, ensure path is exactly /tmp/vedit-temp (no path manipulation)
       if (process.env.VERCEL || process.platform !== 'win32') {
-        // Force Unix path format
-        this.tempDir = this.tempDir.replace(/\\/g, '/')
-        // Ensure it starts with /tmp
-        if (!this.tempDir.startsWith('/tmp')) {
-          this.tempDir = '/tmp/vedit-temp'
-        }
+        // Force to exact Unix path - no manipulation
+        this.tempDir = '/tmp/vedit-temp'
       } else {
-        // On Windows, use path.resolve for proper normalization
+        // On Windows, normalize the path
         this.tempDir = path.resolve(this.tempDir)
       }
       
-      console.log(`📁 Final temp directory path: ${this.tempDir}`)
+      console.log(`📁 Attempting to create/verify temp directory: ${this.tempDir}`)
+      console.log(`📁 Path type check - starts with /tmp: ${this.tempDir.startsWith('/tmp')}`)
+      console.log(`📁 Path contains backslashes: ${this.tempDir.includes('\\')}`)
       
       if (!fs.existsSync(this.tempDir)) {
         // Use recursive: true to create parent directories if needed
+        console.log(`📁 Creating directory: ${this.tempDir}`)
         fs.mkdirSync(this.tempDir, { recursive: true })
         console.log(`✅ Created temp directory: ${this.tempDir}`)
       } else {
