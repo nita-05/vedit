@@ -7,58 +7,62 @@ import { promisify } from 'util'
 
 // Function to get FFmpeg installer path (lazy load to avoid module load issues)
 function getFFmpegInstallerPath(): string | null {
-  // On Vercel, try to find FFmpeg binary in node_modules directly
-  // since the package.json resolution might fail
-  const nodeModulesBase = path.join(process.cwd(), 'node_modules', '@ffmpeg-installer', 'ffmpeg')
-  
-  // Try multiple possible locations for the FFmpeg binary
-  const possiblePaths = [
-    // Standard installer paths
-    path.join(nodeModulesBase, 'ffmpeg'),
-    path.join(nodeModulesBase, 'linux-x64', 'ffmpeg'),
-    path.join(nodeModulesBase, 'linux', 'ffmpeg'),
-    // Platform-specific paths
-    path.join(nodeModulesBase, 'platforms', 'linux', 'ffmpeg'),
-    path.join(nodeModulesBase, 'platforms', 'linux-x64', 'ffmpeg'),
-    // Direct vendor paths
-    path.join(nodeModulesBase, 'vendor', 'ffmpeg'),
-    path.join(nodeModulesBase, 'vendor', 'linux', 'ffmpeg'),
-    path.join(nodeModulesBase, 'vendor', 'linux-x64', 'ffmpeg'),
+  // Try multiple base paths for node_modules (Vercel serverless functions might use different paths)
+  const possibleBasePaths = [
+    process.cwd(), // Standard Next.js path
+    path.join(process.cwd(), '.next', 'server'), // Next.js build output
+    '/var/task', // Vercel serverless function path
+    '/var/task/.next/server', // Next.js in Vercel
+    path.dirname(require.resolve('@ffmpeg-installer/ffmpeg')), // Resolve from require cache
   ]
   
-  for (const binaryPath of possiblePaths) {
-    if (fs.existsSync(binaryPath)) {
-      // Check if it's executable
-      try {
-        const { execSync } = require('child_process')
-        execSync(`chmod +x "${binaryPath}"`, { stdio: 'ignore' })
-        execSync(`"${binaryPath}" -version`, { stdio: 'pipe', timeout: 2000 })
-        console.log(`✅ Found FFmpeg binary at: ${binaryPath}`)
-        return binaryPath
-      } catch {
-        // Continue to next path
-      }
-    }
-  }
-  
-  // Try to require the FFmpeg installer (may fail on Vercel)
+  // Try to require the FFmpeg installer first (most reliable when it works)
   try {
     const ffmpegInstaller = require('@ffmpeg-installer/ffmpeg')
     if (ffmpegInstaller && ffmpegInstaller.path) {
       const installerPath = ffmpegInstaller.path
       if (fs.existsSync(installerPath)) {
-        console.log(`✅ FFmpeg installer path found: ${installerPath}`)
+        console.log(`✅ FFmpeg installer path from require: ${installerPath}`)
         return installerPath
       }
     }
   } catch (error: any) {
-    // Expected to fail on Vercel due to platform package resolution
-    const errorMsg = error?.message || 'module not found'
-    if (errorMsg.includes('linux-x64') || errorMsg.includes('package.json')) {
-      console.log('ℹ️ FFmpeg installer require failed (expected on Vercel), trying direct binary search...')
+    // Expected to fail on Vercel, continue to direct search
+    console.log('ℹ️ FFmpeg installer require failed, searching node_modules directly...')
+  }
+  
+  // Search for FFmpeg binary in node_modules across different base paths
+  for (const basePath of possibleBasePaths) {
+    const nodeModulesBase = path.join(basePath, 'node_modules', '@ffmpeg-installer')
+    
+    // Try multiple possible locations for the FFmpeg binary
+    const possiblePaths = [
+      // Direct in main package
+      path.join(nodeModulesBase, 'ffmpeg', 'ffmpeg'),
+      // Platform-specific packages
+      path.join(nodeModulesBase, 'linux-x64', 'ffmpeg'),
+      path.join(nodeModulesBase, 'ffmpeg', 'linux-x64', 'ffmpeg'),
+      path.join(nodeModulesBase, 'ffmpeg', 'platforms', 'linux-x64', 'ffmpeg'),
+      // Alternative locations
+      path.join(nodeModulesBase, 'ffmpeg', 'vendor', 'ffmpeg'),
+    ]
+    
+    for (const binaryPath of possiblePaths) {
+      if (fs.existsSync(binaryPath)) {
+        try {
+          const { execSync } = require('child_process')
+          // Try to verify it's a valid binary
+          execSync(`"${binaryPath}" -version`, { stdio: 'pipe', timeout: 2000 })
+          console.log(`✅ Found FFmpeg binary at: ${binaryPath}`)
+          return binaryPath
+        } catch {
+          // Continue to next path
+        }
+      }
     }
   }
   
+  console.error('❌ FFmpeg binary not found in any expected location')
   return null
 }
 
