@@ -829,16 +829,34 @@ export class VideoProcessor {
         }
       }
       
-      // If found, copy to /tmp and use it
+      // If found, try to use it
       if (foundFFmpeg && fs.existsSync(foundFFmpeg)) {
+        // Strategy 1: Try direct path first (might work without copying)
+        try {
+          console.log(`🔄 Testing direct path: ${foundFFmpeg}`)
+          execSync(`chmod +x "${foundFFmpeg}"`, { stdio: 'ignore' })
+          const versionOutput = execSync(`"${foundFFmpeg}" -version`, { 
+            stdio: 'pipe', 
+            timeout: 3000,
+            encoding: 'utf8'
+          })
+          if (versionOutput && versionOutput.includes('ffmpeg version')) {
+            ffmpeg.setFfmpegPath(foundFFmpeg)
+            console.log(`✅ Using FFmpeg directly from: ${foundFFmpeg}`)
+            return
+          }
+        } catch (directError: any) {
+          console.log(`ℹ️ Direct path failed, trying /tmp copy: ${directError?.message}`)
+        }
+        
+        // Strategy 2: Copy to /tmp and use it
         const tmpFFmpegPath = '/tmp/ffmpeg'
         try {
-          // Always copy to /tmp on Vercel (filesystem is read-only except /tmp)
           // Check if already exists and is valid
           let needsCopy = true
           if (fs.existsSync(tmpFFmpegPath)) {
             try {
-              execSync(`${tmpFFmpegPath} -version`, { stdio: 'pipe', timeout: 2000 })
+              execSync(`"${tmpFFmpegPath}" -version`, { stdio: 'pipe', timeout: 2000 })
               // Already exists and works, use it
               ffmpeg.setFfmpegPath(tmpFFmpegPath)
               console.log(`✅ Using existing /tmp/ffmpeg (verified)`)
@@ -851,8 +869,11 @@ export class VideoProcessor {
           
           if (needsCopy) {
             console.log(`📋 Copying FFmpeg from ${foundFFmpeg} to /tmp...`)
+            const stats = fs.statSync(foundFFmpeg)
+            console.log(`📦 Source file size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`)
+            
             const binaryData = fs.readFileSync(foundFFmpeg)
-            console.log(`📦 Binary size: ${(binaryData.length / 1024 / 1024).toFixed(2)} MB`)
+            console.log(`📦 Binary data read: ${(binaryData.length / 1024 / 1024).toFixed(2)} MB`)
             
             fs.writeFileSync(tmpFFmpegPath, binaryData, { mode: 0o755 })
             
@@ -864,7 +885,7 @@ export class VideoProcessor {
             }
             
             // Verify it works
-            const versionOutput = execSync(`${tmpFFmpegPath} -version`, { 
+            const versionOutput = execSync(`"${tmpFFmpegPath}" -version`, { 
               stdio: 'pipe', 
               timeout: 5000,
               encoding: 'utf8'
@@ -885,17 +906,6 @@ export class VideoProcessor {
           console.error(`❌ Error code: ${copyError?.code}`)
           if (copyError?.stderr) {
             console.error(`❌ Stderr: ${copyError.stderr.toString().substring(0, 200)}`)
-          }
-          // Try direct path as fallback (might work on some Vercel configs)
-          try {
-            console.log(`🔄 Trying direct path as fallback: ${foundFFmpeg}`)
-            execSync(`chmod +x "${foundFFmpeg}"`, { stdio: 'ignore' })
-            execSync(`${foundFFmpeg} -version`, { stdio: 'pipe', timeout: 3000 })
-            ffmpeg.setFfmpegPath(foundFFmpeg)
-            console.log(`✅ Using FFmpeg directly: ${foundFFmpeg}`)
-            return
-          } catch (directError: any) {
-            console.error(`❌ Direct path also failed: ${directError?.message}`)
           }
         }
       } else {
