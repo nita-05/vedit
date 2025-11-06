@@ -36,6 +36,9 @@ cloudinary.config({
 
 const videoProcessor = new VideoProcessor()
 
+// Render API URL for FFmpeg processing (if deployed)
+const RENDER_API_URL = process.env.RENDER_API_URL || process.env.NEXT_PUBLIC_RENDER_API_URL
+
 // System prompt for VIA
 const SYSTEM_PROMPT = `You are VIA, an AI video and image editing assistant for VEDIT platform. You interpret natural language editing commands and convert them to structured JSON instructions for FFmpeg operations.
 
@@ -728,55 +731,102 @@ export async function POST(request: NextRequest) {
       processedUrl = await processor.mergeClips(clipUrls)
       console.log('✅ Merge completed successfully:', processedUrl)
     } else {
-      // Process the video/image editing instruction with FFmpeg
-      console.log(`🎬 Starting ${isImage ? 'image' : 'video'} processing with FFmpeg...`)
-      try {
-        processedUrl = await processVideoEdit(videoPublicId, instruction, inputVideoUrl, isImage)
-        console.log(`✅ ${isImage ? 'Image' : 'Video'} processed successfully with FFmpeg:`, processedUrl)
-      } catch (processError: any) {
-        console.error('❌ FFmpeg processing failed:', processError)
-        console.error('📋 Error details:', {
-          message: processError?.message,
-          code: processError?.code,
-          stack: processError?.stack,
-        })
-        
-        // Check if it's an FFmpeg-specific error
-        const errorMessage = processError?.message?.toLowerCase() || ''
-        const isFFmpegError = errorMessage.includes('ffmpeg') || 
-                              errorMessage.includes('spawn') || 
-                              errorMessage.includes('enoent') ||
-                              errorMessage.includes('not found') ||
-                              processError?.code === 'ENOENT'
-        
-        // Try Cloudinary fallback for supported operations
-        if (isFFmpegError) {
-          console.log('🔄 FFmpeg failed, attempting Cloudinary fallback...')
-          try {
-            processedUrl = await processWithCloudinaryFallback(videoPublicId, instruction, isImage)
-            console.log(`✅ Processed with Cloudinary fallback: ${processedUrl}`)
-          } catch (cloudinaryError: any) {
-            console.error('❌ Cloudinary fallback also failed:', cloudinaryError)
-            // Return error with both failures
+      // Process the video/image editing instruction
+      // PRIORITY 1: Try Render API if available (for FFmpeg operations)
+      // PRIORITY 2: Try local FFmpeg
+      // PRIORITY 3: Try Cloudinary fallback
+      
+      // Operations that need FFmpeg (but captions handled on Vercel due to Whisper API)
+      const needsFFmpeg = ['addMusic', 'merge', 'trim', 'removeClip', 'addTransition', 'generateVoiceover'].includes(instruction.operation)
+      const isCaptions = instruction.operation === 'addCaptions' || instruction.operation === 'customSubtitle'
+      
+      // Skip Render for captions (handled on Vercel with Whisper)
+      if (needsFFmpeg && RENDER_API_URL && !isCaptions) {
+        console.log(`🌐 Using Render API for FFmpeg operation: ${instruction.operation}`)
+        try {
+          const requestBody: any = {
+            videoUrl: inputVideoUrl,
+            instruction,
+            publicId: videoPublicId,
+          }
+          
+          const renderResponse = await fetch(`${RENDER_API_URL}/process`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody),
+          })
+          
+          if (!renderResponse.ok) {
+            throw new Error(`Render API error: ${renderResponse.statusText}`)
+          }
+          
+          const renderData = await renderResponse.json()
+          if (renderData.success && renderData.videoUrl) {
+            processedUrl = renderData.videoUrl
+            console.log(`✅ Processed via Render API: ${processedUrl}`)
+          } else {
+            throw new Error(renderData.message || 'Render API processing failed')
+          }
+        } catch (renderError: any) {
+          console.error('❌ Render API failed:', renderError)
+          console.log('🔄 Falling back to local FFmpeg...')
+          // Fall through to local FFmpeg attempt
+        }
+      }
+      
+      // If Render API not available or failed, try local FFmpeg
+      if (!processedUrl) {
+        console.log(`🎬 Starting ${isImage ? 'image' : 'video'} processing with local FFmpeg...`)
+        try {
+          processedUrl = await processVideoEdit(videoPublicId, instruction, inputVideoUrl, isImage)
+          console.log(`✅ ${isImage ? 'Image' : 'Video'} processed successfully with FFmpeg:`, processedUrl)
+        } catch (processError: any) {
+          console.error('❌ FFmpeg processing failed:', processError)
+          console.error('📋 Error details:', {
+            message: processError?.message,
+            code: processError?.code,
+            stack: processError?.stack,
+          })
+          
+          // Check if it's an FFmpeg-specific error
+          const errorMessage = processError?.message?.toLowerCase() || ''
+          const isFFmpegError = errorMessage.includes('ffmpeg') || 
+                                errorMessage.includes('spawn') || 
+                                errorMessage.includes('enoent') ||
+                                errorMessage.includes('not found') ||
+                                processError?.code === 'ENOENT'
+          
+          // Try Cloudinary fallback for supported operations
+          if (isFFmpegError) {
+            console.log('🔄 FFmpeg failed, attempting Cloudinary fallback...')
+            try {
+              processedUrl = await processWithCloudinaryFallback(videoPublicId, instruction, isImage)
+              console.log(`✅ Processed with Cloudinary fallback: ${processedUrl}`)
+            } catch (cloudinaryError: any) {
+              console.error('❌ Cloudinary fallback also failed:', cloudinaryError)
+              // Return error with both failures
+              return NextResponse.json(
+                { 
+                  error: 'Video processing failed',
+                  message: `FFmpeg unavailable and Cloudinary fallback failed: ${cloudinaryError?.message || 'Unknown error'}. Please check your Cloudinary configuration.`,
+                  videoUrl: null,
+                },
+                { status: 500 }
+              )
+            }
+          } else {
+            // Non-FFmpeg error, return as-is
             return NextResponse.json(
               { 
-                error: 'Video processing failed',
-                message: `FFmpeg unavailable and Cloudinary fallback failed: ${cloudinaryError?.message || 'Unknown error'}. Please check your Cloudinary configuration.`,
+                error: processError?.message || 'Video processing failed',
+                message: `Failed to process video: ${processError?.message || 'Unknown error'}. Please check server logs for details.`,
                 videoUrl: null,
               },
               { status: 500 }
             )
           }
-        } else {
-          // Non-FFmpeg error, return as-is
-          return NextResponse.json(
-            { 
-              error: processError?.message || 'Video processing failed',
-              message: `Failed to process video: ${processError?.message || 'Unknown error'}. Please check server logs for details.`,
-              videoUrl: null,
-            },
-            { status: 500 }
-          )
         }
       }
     }
