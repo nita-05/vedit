@@ -1100,10 +1100,12 @@ async function processWithCloudinaryFallback(
           transformation: [{ effect: 'grayscale' }],
           fetch_format: resourceType === 'video' ? 'auto' : undefined,
         })
-        // Ensure video format is included
-        if (resourceType === 'video' && !filterUrl.includes('.mp4')) {
-          filterUrl = filterUrl.replace(/\/upload\/([^\/]+)\/(.+)$/, '/upload/$1/fl_streaming_attachment/$2')
-        }
+        // Add cache-busting to force browser refresh
+        const timestamp = Date.now()
+        filterUrl = filterUrl.includes('?') 
+          ? `${filterUrl}&_t=${timestamp}` 
+          : `${filterUrl}?_t=${timestamp}`
+        console.log(`☁️ Generated grayscale URL with cache-bust: ${filterUrl}`)
       } else if (filterType === 'saturation') {
         const satValue = params.value || 1.0
         const saturation = Math.round((satValue - 1) * 100)
@@ -1141,10 +1143,9 @@ async function processWithCloudinaryFallback(
     case 'generateVideo':
     case 'removeObject':
       // These operations require FFmpeg and cannot be done with Cloudinary alone
-      // Return original media with a message
-      console.warn(`⚠️ Operation ${operation} not supported by Cloudinary fallback`)
-      const originalResource = await cloudinary.api.resource(publicId, { resource_type: resourceType })
-      return originalResource.secure_url || ''
+      // DO NOT return original - throw error instead so user knows it failed
+      console.error(`❌ Operation ${operation} requires FFmpeg and cannot use Cloudinary fallback`)
+      throw new Error(`Operation "${operation}" requires FFmpeg processing. Please ensure Render API is configured or FFmpeg is available.`)
     
     default:
       // Unknown operation - return original
