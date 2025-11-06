@@ -16,14 +16,21 @@ const nextConfig = {
       config.externals = config.externals || []
       
       // Ensure binary files are included (not externalized)
-      config.externals = config.externals.filter((external: any) => {
-        if (typeof external === 'function') {
-          // Can't filter functions easily, but they should handle it
+      // Note: externals can be functions or strings, filter only strings
+      if (Array.isArray(config.externals)) {
+        config.externals = config.externals.filter((external) => {
+          if (typeof external === 'function') {
+            // Keep functions as-is
+            return true
+          }
+          if (typeof external === 'string') {
+            // Don't externalize ffmpeg-static
+            return !external.includes('ffmpeg-static')
+          }
+          // Keep other types
           return true
-        }
-        // Don't externalize ffmpeg-static
-        return !external.includes('ffmpeg-static')
-      })
+        })
+      }
       
       // Add alias to help resolve ffmpeg-static
       config.resolve = config.resolve || {}
