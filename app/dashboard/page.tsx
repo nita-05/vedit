@@ -742,8 +742,8 @@ export default function DashboardPage() {
                   {selectedMedia.type === 'video' ? (
                     <>
                       <ReactPlayer
-                        key={`video-${videoKey}-${selectedMedia.url?.split('?')[0] || ''}`}
-                        url={selectedMedia.url ? `${selectedMedia.url}${selectedMedia.url.includes('?') ? '&' : '?'}_cb=${videoKey}&_nocache=1` : ''}
+                        key={`video-${videoKey}-${selectedMedia.url?.split('?')[0]?.split('/').pop() || ''}`}
+                        url={selectedMedia.url ? `${selectedMedia.url}${selectedMedia.url.includes('?') ? '&' : '?'}_cb=${videoKey}&_nocache=${Date.now()}` : ''}
                         controls
                         width="100%"
                         height="auto"
@@ -1092,12 +1092,6 @@ export default function DashboardPage() {
                 const newVideoKey = videoKey + 1
                 console.log('🔄 Dashboard: Incrementing videoKey from', videoKey, 'to', newVideoKey)
                 
-                // Update state in the correct order to force ReactPlayer remount
-                // First update the URL, then update the key to trigger remount
-                setMediaItems(updated)
-                setSelectedMedia({ ...selectedMedia, url })
-                setLastProcessedUrl(url) // Track last processed URL
-                
                 // CRITICAL: For processed videos, immediately use original duration
                 // Cloudinary streaming metadata is unreliable and often incomplete
                 if (originalVideoDuration > 0) {
@@ -1105,11 +1099,21 @@ export default function DashboardPage() {
                   setDuration(originalVideoDuration)
                 }
                 
+                // Update state in the correct order to force ReactPlayer remount
+                // First update the URL and mediaItems
+                setMediaItems(updated)
+                setSelectedMedia({ ...selectedMedia, url })
+                setLastProcessedUrl(url) // Track last processed URL
+                
                 // Small delay to ensure state updates propagate
-                await new Promise(resolve => setTimeout(resolve, 10))
+                await new Promise(resolve => setTimeout(resolve, 50))
                 
                 // Then update videoKey to force ReactPlayer to remount with new URL
+                // This must happen AFTER URL is set to ensure ReactPlayer gets the new URL
                 setVideoKey(newVideoKey)
+                
+                // Force a small additional delay to ensure ReactPlayer fully remounts
+                await new Promise(resolve => setTimeout(resolve, 50))
                 
                 console.log('✅ Dashboard: State updated! Video key:', newVideoKey)
                 console.log('✅ Dashboard: New URL set:', url)
