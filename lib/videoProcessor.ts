@@ -705,6 +705,22 @@ export class VideoProcessor {
     } catch {
       // Continue to find FFmpeg path
     }
+    
+    // On Vercel, always try /tmp first (might have been copied from previous request)
+    if (isVercelOrLinux()) {
+      const tmpFFmpegPath = '/tmp/ffmpeg'
+      if (fs.existsSync(tmpFFmpegPath)) {
+        try {
+          execSync(`${tmpFFmpegPath} -version`, { stdio: 'pipe', timeout: 2000 })
+          ffmpeg.setFfmpegPath(tmpFFmpegPath)
+          console.log(`✅ Using FFmpeg from /tmp (already exists): ${tmpFFmpegPath}`)
+          return
+        } catch {
+          // /tmp file exists but doesn't work, will re-copy
+          console.log(`⚠️ /tmp/ffmpeg exists but not working, will re-copy`)
+        }
+      }
+    }
 
     // On Vercel/Linux, FFmpeg is NOT available system-wide
     // We need to use the bundled binary from ffmpeg-static
