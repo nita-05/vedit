@@ -13,6 +13,9 @@ import ActionNavbar from '@/components/ActionNavbar'
 import VPortModal from '@/components/VPortModal'
 import VIAProfilesModal from '@/components/VIAProfilesModal'
 import BrandKitsModal from '@/components/BrandKitsModal'
+import PreviewPanel from '@/components/PreviewPanel'
+import TemplatesPanel from '@/components/TemplatesPanel'
+import AutoEnhancePanel from '@/components/AutoEnhancePanel'
 
 const ReactPlayer = dynamic(() => import('react-player'), { ssr: false })
 
@@ -46,6 +49,10 @@ export default function DashboardPage() {
   const [originalVideoUrl, setOriginalVideoUrl] = useState<string | null>(null) // Track original video URL
   const [lastProcessedUrl, setLastProcessedUrl] = useState<string | null>(null) // Track last processed URL
   const [processingNotification, setProcessingNotification] = useState<{show: boolean, message: string, url: string} | null>(null)
+  const [isPreviewOpen, setIsPreviewOpen] = useState(false)
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false)
+  const [isAutoEnhanceOpen, setIsAutoEnhanceOpen] = useState(false)
+  const [previewOperation, setPreviewOperation] = useState<{operation: string, params: any} | null>(null)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -367,6 +374,9 @@ export default function DashboardPage() {
         onPublish={() => setIsVPortOpen(true)}
         onOpenVIAProfiles={() => setIsVIAProfilesOpen(true)}
         onOpenBrandKits={() => setIsBrandKitsOpen(true)}
+        onOpenPreview={() => setIsPreviewOpen(true)}
+        onOpenTemplates={() => setIsTemplatesOpen(true)}
+        onOpenAutoEnhance={() => setIsAutoEnhanceOpen(true)}
       />
 
       {/* V-Port Modal */}
@@ -388,6 +398,89 @@ export default function DashboardPage() {
           if (selectedMedia?.publicId) {
             const command = `Generate voiceover with ${profile.voice} voice saying "${profile.name}"`
             setCommandToInput(command)
+          }
+        }}
+      />
+
+      {/* Preview Panel */}
+      {isPreviewOpen && previewOperation && (
+        <PreviewPanel
+          videoPublicId={selectedMedia?.publicId || ''}
+          videoUrl={selectedMedia?.url}
+          operation={previewOperation.operation}
+          params={previewOperation.params}
+          onClose={() => {
+            setIsPreviewOpen(false)
+            setPreviewOperation(null)
+          }}
+        />
+      )}
+
+      {/* Templates Panel */}
+      <TemplatesPanel
+        isOpen={isTemplatesOpen}
+        onClose={() => setIsTemplatesOpen(false)}
+        videoPublicId={selectedMedia?.publicId || ''}
+        videoUrl={selectedMedia?.url}
+        onApplyTemplate={async (operations) => {
+          // Apply template operations sequentially via VIA
+          for (const op of operations) {
+            const command = `${op.operation === 'colorGrade' ? 'Apply' : op.operation === 'applyEffect' ? 'Apply' : 'Add'} ${op.params.preset || op.params.text || ''} ${op.operation === 'addText' ? 'text' : op.operation === 'colorGrade' ? 'color grade' : 'effect'}`
+            setCommandToInput(command)
+            // Wait a bit between operations
+            await new Promise(resolve => setTimeout(resolve, 500))
+          }
+        }}
+      />
+
+      {/* Auto-Enhance Panel */}
+      <AutoEnhancePanel
+        isOpen={isAutoEnhanceOpen}
+        onClose={() => setIsAutoEnhanceOpen(false)}
+        videoPublicId={selectedMedia?.publicId || ''}
+        videoUrl={selectedMedia?.url}
+        onApplyEnhancements={async (operations) => {
+          // Apply enhancements sequentially via VIA
+          for (const op of operations) {
+            let command = ''
+            
+            switch (op.operation) {
+              case 'colorGrade':
+                command = `Apply ${op.params.preset || 'cinematic'} color grade`
+                break
+              case 'applyEffect':
+                command = `Apply ${op.params.preset || 'glow'} effect`
+                break
+              case 'addMusic':
+                command = `Add ${op.params.preset || 'Ambient'} background music`
+                break
+              case 'addTransition':
+                command = `Apply ${op.params.preset || 'Fade'} transition`
+                break
+              case 'addText':
+                command = `Add ${op.params.preset || 'Bold'} text "${op.params.text || 'Welcome'}" at ${op.params.position || 'center'}`
+                break
+              case 'adjustSpeed':
+                command = `Set video speed to ${op.params.speed}x`
+                break
+              case 'filter':
+                if (op.params.type === 'saturation') {
+                  const value = op.params.value || 1.0
+                  const change = value > 1 ? 'increase' : 'decrease'
+                  command = `${change} saturation by ${Math.abs((value - 1) * 100).toFixed(0)}%`
+                } else if (op.params.type === 'noise reduction' || op.params.type === 'noise') {
+                  command = `Apply noise reduction filter`
+                } else {
+                  command = `Apply ${op.params.type || 'filter'} filter`
+                }
+                break
+              default:
+                command = `Apply ${op.params.preset || 'enhancement'}`
+            }
+            
+            setCommandToInput(command)
+            // Wait between operations to allow processing
+            await new Promise(resolve => setTimeout(resolve, 1000))
           }
         }}
       />

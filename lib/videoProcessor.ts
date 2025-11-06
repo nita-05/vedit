@@ -13,42 +13,48 @@ function getFFmpegInstallerPath(): string | null {
   console.log(`📁 Platform: ${process.platform}`)
   console.log(`📁 VERCEL env: ${process.env.VERCEL}`)
   
-  // PRIORITY 1: Try to require the Linux-specific package directly (most reliable for Vercel)
+  // PRIORITY 1: Try ffmpeg-static (best for Vercel/serverless environments)
   try {
-    const linuxFFmpeg = require('@ffmpeg-installer/ffmpeg-linux-x64')
-    console.log(`📦 Linux FFmpeg package loaded:`, {
-      hasPath: !!linuxFFmpeg?.path,
-      path: linuxFFmpeg?.path,
-      keys: linuxFFmpeg ? Object.keys(linuxFFmpeg) : [],
+    const ffmpegStatic = require('ffmpeg-static')
+    console.log(`📦 ffmpeg-static package loaded:`, {
+      hasPath: !!ffmpegStatic,
+      path: ffmpegStatic,
+      type: typeof ffmpegStatic,
     })
-    if (linuxFFmpeg && linuxFFmpeg.path) {
-      // Try absolute path first
-      if (fs.existsSync(linuxFFmpeg.path)) {
-        console.log(`✅ FFmpeg Linux package path (absolute): ${linuxFFmpeg.path}`)
-        return linuxFFmpeg.path
-      }
-      
-      // Try relative to module directory
-      try {
-        const moduleDir = path.dirname(require.resolve('@ffmpeg-installer/ffmpeg-linux-x64'))
-        const relativePath = path.resolve(moduleDir, linuxFFmpeg.path)
-        if (fs.existsSync(relativePath)) {
-          console.log(`✅ FFmpeg Linux package path (relative): ${relativePath}`)
-          return relativePath
+    if (ffmpegStatic) {
+      // ffmpeg-static returns the path directly as a string
+      const staticPath = typeof ffmpegStatic === 'string' ? ffmpegStatic : ffmpegStatic.path
+      if (staticPath) {
+        // Check if path exists - in Next.js dev, it might point to .next folder which doesn't exist yet
+        // In production/Vercel, it should point to the actual binary
+        if (fs.existsSync(staticPath)) {
+          console.log(`✅ FFmpeg static path (absolute, verified): ${staticPath}`)
+          return staticPath
+        } else {
+          // In development, the path might be in .next which is created during build
+          // Try to find it in node_modules directly
+          try {
+            const staticModuleDir = path.dirname(require.resolve('ffmpeg-static'))
+            const possiblePaths = [
+              path.join(staticModuleDir, 'ffmpeg.exe'),
+              path.join(staticModuleDir, 'ffmpeg'),
+              path.join(staticModuleDir, 'vendor', process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'),
+            ]
+            for (const possiblePath of possiblePaths) {
+              if (fs.existsSync(possiblePath)) {
+                console.log(`✅ FFmpeg static found in module: ${possiblePath}`)
+                return possiblePath
+              }
+            }
+          } catch {
+            // Continue to other methods
+          }
+          console.log(`⚠️ ffmpeg-static path doesn't exist: ${staticPath}`)
         }
-        
-        // Try just 'ffmpeg' in the module directory
-        const directPath = path.join(moduleDir, 'ffmpeg')
-        if (fs.existsSync(directPath)) {
-          console.log(`✅ FFmpeg found directly in module dir: ${directPath}`)
-          return directPath
-        }
-      } catch (resolveError: any) {
-        console.log(`ℹ️ Could not resolve Linux package dir: ${resolveError?.message}`)
       }
     }
   } catch (error: any) {
-    console.log(`ℹ️ Linux FFmpeg package require failed: ${error?.message || 'unknown error'}`)
+    console.log(`ℹ️ ffmpeg-static package require failed: ${error?.message || 'unknown error'}`)
   }
   
   // PRIORITY 2: Try to require the main FFmpeg installer package
@@ -86,13 +92,13 @@ function getFFmpegInstallerPath(): string | null {
   const possibleBasePaths: string[] = []
   
   try {
-    // Try to resolve the linux-x64 package
-    const linuxResolved = require.resolve('@ffmpeg-installer/ffmpeg-linux-x64')
-    const linuxDir = path.dirname(linuxResolved)
-    possibleBasePaths.unshift(linuxDir) // Highest priority
-    console.log(`📦 Resolved Linux package at: ${linuxResolved}, dir: ${linuxDir}`)
+    // Try to resolve ffmpeg-static
+    const staticResolved = require.resolve('ffmpeg-static')
+    const staticDir = path.dirname(staticResolved)
+    possibleBasePaths.unshift(staticDir) // Highest priority
+    console.log(`📦 Resolved ffmpeg-static at: ${staticResolved}, dir: ${staticDir}`)
   } catch (error: any) {
-    console.log(`ℹ️ Could not resolve Linux package: ${error?.message}`)
+    console.log(`ℹ️ Could not resolve ffmpeg-static: ${error?.message}`)
   }
   
   try {
@@ -167,21 +173,23 @@ function getFFmpegInstallerPath(): string | null {
           // Continue
         }
         
+        // Also check if there's a separate package directory
+        const parentDir = path.dirname(nmPath)
+        
         // Try multiple possible locations for the FFmpeg binary
         const possiblePaths = [
+          // ffmpeg-static paths (highest priority)
+          path.join(nmPath, 'ffmpeg-static', 'ffmpeg'),
+          path.join(parentDir, 'ffmpeg-static', 'ffmpeg'),
+          // @ffmpeg-installer paths
           path.join(nmPath, 'linux-x64', 'ffmpeg'),
           path.join(nmPath, 'ffmpeg-linux-x64', 'ffmpeg'),
           path.join(nmPath, 'ffmpeg', 'ffmpeg'),
           path.join(nmPath, 'ffmpeg', 'linux-x64', 'ffmpeg'),
           path.join(nmPath, 'ffmpeg', 'vendor', 'ffmpeg'),
-        ]
-        
-        // Also check if there's a separate package directory
-        const parentDir = path.dirname(nmPath)
-        possiblePaths.push(
           path.join(parentDir, 'ffmpeg-linux-x64', 'ffmpeg'),
           path.join(parentDir, 'ffmpeg-linux-x64', 'vendor', 'ffmpeg'),
-        )
+        ]
         
         for (const binaryPath of possiblePaths) {
           console.log(`  🔎 Checking: ${binaryPath}`)
@@ -205,6 +213,9 @@ function getFFmpegInstallerPath(): string | null {
   
   console.error('❌ FFmpeg binary not found in any expected location')
   console.error('❌ Searched base paths:', possibleBasePaths)
+  console.error('❌ Platform:', process.platform)
+  console.error('❌ Vercel env:', process.env.VERCEL)
+  console.error('❌ CWD:', process.cwd())
   return null
 }
 
@@ -228,29 +239,61 @@ let ffmpegPathSet = false
 // On Vercel/Linux, try to find and copy FFmpeg to /tmp early
 if (process.env.VERCEL === '1' || process.env.VERCEL_ENV !== undefined) {
   try {
+    console.log('🔍 Early FFmpeg initialization for Vercel...')
     const installerPath = getFFmpegInstallerPath()
+    console.log(`📦 Installer path found: ${installerPath || 'null'}`)
     if (installerPath && fs.existsSync(installerPath)) {
       const tmpFFmpegPath = '/tmp/ffmpeg'
       try {
-        // Copy to /tmp if not already there
-        if (!fs.existsSync(tmpFFmpegPath)) {
-          console.log(`📋 Early copy: Copying FFmpeg to ${tmpFFmpegPath}...`)
+        // Copy to /tmp if not already there or if source is newer
+        let needsCopy = true
+        if (fs.existsSync(tmpFFmpegPath)) {
+          try {
+            const tmpStats = fs.statSync(tmpFFmpegPath)
+            const srcStats = fs.statSync(installerPath)
+            // Copy if source is newer or sizes don't match
+            if (tmpStats.size === srcStats.size && tmpStats.mtime >= srcStats.mtime) {
+              needsCopy = false
+            }
+          } catch {
+            // If we can't compare, copy anyway
+          }
+        }
+        
+        if (needsCopy) {
+          console.log(`📋 Early copy: Copying FFmpeg from ${installerPath} to ${tmpFFmpegPath}...`)
           const binaryData = fs.readFileSync(installerPath)
           fs.writeFileSync(tmpFFmpegPath, binaryData)
           execSync(`chmod +x "${tmpFFmpegPath}"`, { stdio: 'ignore' })
           console.log(`✅ Early copy: FFmpeg copied to ${tmpFFmpegPath}`)
+        } else {
+          console.log(`ℹ️ FFmpeg already exists in /tmp, skipping copy`)
         }
+        
         // Verify it works
         execSync(`${tmpFFmpegPath} -version`, { stdio: 'pipe', timeout: 3000 })
         ffmpeg.setFfmpegPath(tmpFFmpegPath)
         ffmpegPathSet = true
         console.log(`✅ Early init: Using FFmpeg from /tmp: ${tmpFFmpegPath}`)
       } catch (error: any) {
-        console.log(`ℹ️ Early copy failed, will retry at runtime: ${error?.message}`)
+        console.log(`ℹ️ Early copy/verification failed, will retry at runtime: ${error?.message}`)
+        // Try using the installer path directly as fallback
+        try {
+          execSync(`chmod +x "${installerPath}"`, { stdio: 'ignore' })
+          execSync(`${installerPath} -version`, { stdio: 'pipe', timeout: 3000 })
+          ffmpeg.setFfmpegPath(installerPath)
+          ffmpegPathSet = true
+          console.log(`✅ Early init: Using FFmpeg directly from installer: ${installerPath}`)
+        } catch (directError: any) {
+          console.log(`ℹ️ Direct path also failed: ${directError?.message}`)
+        }
       }
+    } else {
+      console.log(`⚠️ Installer path not found or doesn't exist, will retry at runtime`)
     }
   } catch (error: any) {
     console.log(`ℹ️ Early FFmpeg initialization failed: ${error?.message}`)
+    console.log(`ℹ️ Error stack: ${error?.stack}`)
   }
 }
 
@@ -654,6 +697,10 @@ export class VideoProcessor {
       
       for (const basePath of possibleBasePaths) {
         const possiblePaths = [
+          // ffmpeg-static paths (highest priority)
+          path.join(basePath, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+          path.join(basePath, 'node_modules', 'ffmpeg-static'),
+          // @ffmpeg-installer paths
           path.join(basePath, 'node_modules', '@ffmpeg-installer', 'linux-x64', 'ffmpeg'),
           path.join(basePath, 'node_modules', '@ffmpeg-installer', 'ffmpeg', 'ffmpeg'),
           path.join(basePath, '@ffmpeg-installer', 'linux-x64', 'ffmpeg'),
@@ -962,10 +1009,15 @@ export class VideoProcessor {
       }
       
       // Use normalized absolute path for input and output
-      // On Vercel/Linux, avoid path.resolve (it converts to Windows paths)
-      const normalizedInputPath = isVercelOrLinux()
-        ? inputPath
-        : path.resolve(inputPath)
+      // On Windows, use forward slashes for FFmpeg (it accepts both)
+      // On Vercel/Linux, paths are already correct
+      let normalizedInputPath: string
+      if (isVercelOrLinux()) {
+        normalizedInputPath = inputPath
+      } else {
+        // On Windows, convert to forward slashes for FFmpeg
+        normalizedInputPath = path.resolve(inputPath).replace(/\\/g, '/')
+      }
       console.log(`📹 Normalized input path: ${normalizedInputPath}`)
       console.log(`📹 Normalized output path: ${normalizedOutputPath}`)
       
@@ -1060,11 +1112,26 @@ export class VideoProcessor {
         console.error('❌ FFmpeg verification failed after all attempts')
         console.error('❌ Current FFmpeg path setting:', currentPath)
         console.error('❌ Searched in: node_modules, /tmp, system paths, and PATH')
+        console.error('❌ Platform:', process.platform)
+        console.error('❌ Vercel env:', process.env.VERCEL)
+        console.error('❌ CWD:', process.cwd())
         
-        // Provide helpful error message
+        // Try one last time to get installer path and log it
+        const lastAttemptPath = getFFmpegInstallerPath()
+        console.error('❌ Last attempt installer path:', lastAttemptPath || 'null')
+        
+        // Provide helpful error message with more context
+        const searchedPaths = [
+          currentPath !== 'not set' ? currentPath : null,
+          lastAttemptPath,
+          '/tmp/ffmpeg',
+          '/usr/bin/ffmpeg',
+          '/usr/local/bin/ffmpeg',
+        ].filter(Boolean).join(', ') || 'not set'
+        
         const errorMessage = isVercelOrLinux()
-          ? `FFmpeg not found. The @ffmpeg-installer/ffmpeg binary is not accessible on Vercel. Path searched: ${currentPath}. Please check server logs for more details.`
-          : `FFmpeg is not available. Please ensure FFmpeg is installed. Path searched: ${currentPath}`
+          ? `FFmpeg not found. The ffmpeg-static binary is not accessible on Vercel. Paths searched: ${searchedPaths}. Please check server logs for more details.`
+          : `FFmpeg is not available. Please ensure FFmpeg is installed. Paths searched: ${searchedPaths}`
         
         reject(new Error(errorMessage))
         return
@@ -1091,21 +1158,26 @@ export class VideoProcessor {
           }
           break
 
-        case 'colorGrade':
-          const { preset } = instruction.params
-          console.log(`🎨 Applying color grade: ${preset || instruction.params.style}`)
-          command = this.applyColorGrade(command, preset || instruction.params.style)
+        case 'colorGrade': {
+          const { preset, startTime, endTime } = instruction.params
+          console.log(`🎨 Applying color grade: ${preset || instruction.params.style}${startTime !== undefined ? ` from ${startTime}s to ${endTime !== undefined ? endTime + 's' : 'end'}` : ''}`)
+          command = this.applyColorGrade(command, preset || instruction.params.style, { startTime, endTime })
           break
+        }
 
-        case 'applyEffect':
-          console.log(`✨ Applying effect: ${instruction.params.preset}`)
+        case 'applyEffect': {
+          const { preset: effectPreset, startTime: effectStartTime, endTime: effectEndTime } = instruction.params
+          console.log(`✨ Applying effect: ${effectPreset}${effectStartTime !== undefined ? ` from ${effectStartTime}s to ${effectEndTime !== undefined ? effectEndTime + 's' : 'end'}` : ''}`)
           command = this.applyEffect(command, instruction.params)
           break
+        }
 
-        case 'addText':
-          console.log(`📝 Adding text: ${instruction.params.text}`)
+        case 'addText': {
+          const { text: textContent, startTime: textStartTime, endTime: textEndTime } = instruction.params
+          console.log(`📝 Adding text: ${textContent}${textStartTime !== undefined ? ` from ${textStartTime}s to ${textEndTime !== undefined ? textEndTime + 's' : 'end'}` : ''}`)
           command = this.addTextOverlay(command, instruction.params)
           break
+        }
 
         case 'addTransition':
           console.log(`🎬 Adding transition: ${instruction.params.preset || instruction.params.type}`)
@@ -1129,17 +1201,19 @@ export class VideoProcessor {
           // This will be handled in a separate merge method
           break
 
-        case 'removeClip':
+        case 'removeClip': {
           const { startTime, endTime } = instruction.params
           console.log(`🗑️ Removing clip: ${startTime}s to ${endTime}s`)
           command = this.removeClipSegment(command, startTime, endTime)
           break
+        }
 
-        case 'filter':
-          const { type } = instruction.params
-          console.log(`🔍 Applying filter: ${type}`)
-          command = this.applyFilter(command, type)
+        case 'filter': {
+          const { type: filterType, startTime: filterStartTime, endTime: filterEndTime } = instruction.params
+          console.log(`🔍 Applying filter: ${filterType}${filterStartTime !== undefined ? ` from ${filterStartTime}s to ${filterEndTime !== undefined ? filterEndTime + 's' : 'end'}` : ''}`)
+          command = this.applyFilter(command, filterType, { startTime: filterStartTime, endTime: filterEndTime })
           break
+        }
 
         case 'generateTrailer':
           console.log(`🎞️ Generating trailer`)
@@ -1216,30 +1290,33 @@ export class VideoProcessor {
       }
       
       // Use normalized absolute path for output
-      // On Vercel/Linux, paths are already correct; on Windows, normalize
+      // On Windows, use backslashes for file system but forward slashes for FFmpeg (FFmpeg accepts both)
       let finalOutputPath: string
+      let finalOutputPathForFFmpeg: string  // Path for FFmpeg command (forward slashes)
       let finalOutputDir: string
       
       if (isVercelOrLinux()) {
         // On Vercel/Linux, paths are already correct
         finalOutputPath = normalizedOutputPath
+        finalOutputPathForFFmpeg = normalizedOutputPath
         const lastSlash = normalizedOutputPath.lastIndexOf('/')
         finalOutputDir = lastSlash > 0 ? normalizedOutputPath.substring(0, lastSlash) : this.tempDir
       } else {
-        // On Windows, normalize and replace backslashes
-        finalOutputPath = path.resolve(normalizedOutputPath).replace(/\\/g, '/')
-        finalOutputDir = path.dirname(finalOutputPath).replace(/\\/g, '/')
+        // On Windows: use backslashes for file system operations
+        finalOutputPath = path.resolve(normalizedOutputPath)
+        // For FFmpeg on Windows, use backslashes (native format)
+        // Forward slashes were causing "Invalid argument" errors
+        // fluent-ffmpeg should handle backslashes correctly
+        finalOutputPathForFFmpeg = finalOutputPath // Use native Windows path with backslashes
+        finalOutputDir = path.dirname(finalOutputPath)
       }
       
-      console.log(`📁 Final output path: ${finalOutputPath}`)
+      console.log(`📁 Final output path (FS): ${finalOutputPath}`)
+      console.log(`📁 Final output path (FFmpeg): ${finalOutputPathForFFmpeg}`)
       console.log(`📁 Final output dir: ${finalOutputDir}`)
-      console.log(`📁 Final path check - contains backslashes: ${finalOutputPath.includes('\\')}`)
       
       // Double-check directory exists right before FFmpeg runs
-      // On Vercel/Linux, use paths as-is; on Windows, convert to Windows format
-      const finalOutputDirForFS = isVercelOrLinux()
-        ? finalOutputDir
-        : finalOutputDir.replace(/\//g, '\\')
+      const finalOutputDirForFS = finalOutputDir
       
       console.log(`📁 Creating directory check - path: ${finalOutputDirForFS}`)
       console.log(`📁 Creating directory check - contains backslashes: ${finalOutputDirForFS.includes('\\')}`)
@@ -1263,14 +1340,10 @@ export class VideoProcessor {
       }
       
       // Remove output file if it exists (FFmpeg might have issues with existing files)
-      const finalOutputPathForFS = isVercelOrLinux()
-        ? finalOutputPath
-        : finalOutputPath.replace(/\//g, '\\')
-      
-      if (fs.existsSync(finalOutputPathForFS)) {
+      if (fs.existsSync(finalOutputPath)) {
         try {
-          fs.unlinkSync(finalOutputPathForFS)
-          console.log(`🗑️ Removed existing output file: ${finalOutputPathForFS}`)
+          fs.unlinkSync(finalOutputPath)
+          console.log(`🗑️ Removed existing output file: ${finalOutputPath}`)
         } catch (unlinkError) {
           console.warn(`⚠️ Could not remove existing output file: ${unlinkError}`)
         }
@@ -1290,16 +1363,15 @@ export class VideoProcessor {
         return
       }
       
-      // Use forward slashes for FFmpeg output path (Windows FFmpeg accepts both)
-      // This ensures consistency with subtitle filter paths
+      // Use the determined output path for FFmpeg
       command
-        .output(finalOutputPath)
+        .output(finalOutputPathForFFmpeg)
         .on('start', (commandLine) => {
           console.log('🚀 FFmpeg command:', commandLine)
-          console.log(`📁 Output file path (FFmpeg): ${finalOutputPath}`)
-          console.log(`📁 Output file path (FileSystem): ${finalOutputPathForFS}`)
+          console.log(`📁 Output file path (FFmpeg): ${finalOutputPathForFFmpeg}`)
+          console.log(`📁 Output file path (FileSystem): ${finalOutputPath}`)
           console.log(`📁 Output directory exists: ${fs.existsSync(finalOutputDirForFS)}`)
-          console.log(`📁 Output file exists before FFmpeg: ${fs.existsSync(finalOutputPathForFS)}`)
+          console.log(`📁 Output file exists before FFmpeg: ${fs.existsSync(finalOutputPath)}`)
         })
         .on('progress', (progress) => {
           if (!isImage) {
@@ -1308,6 +1380,19 @@ export class VideoProcessor {
         })
         .on('end', () => {
           console.log(`✅ FFmpeg processing completed (${isImage ? 'image' : 'video'})`)
+          // Verify output file exists using file system path (backslashes on Windows)
+          if (!fs.existsSync(finalOutputPath)) {
+            console.error(`❌ Output file not found at: ${finalOutputPath}`)
+            reject(new Error(`Output file not found after FFmpeg processing: ${finalOutputPath}`))
+            return
+          }
+          const stats = fs.statSync(finalOutputPath)
+          if (stats.size === 0) {
+            console.error(`❌ Output file is empty (0 bytes): ${finalOutputPath}`)
+            reject(new Error(`Output file is empty after FFmpeg processing: ${finalOutputPath}`))
+            return
+          }
+          console.log(`✅ Output file verified (${(stats.size / 1024 / 1024).toFixed(2)}MB): ${finalOutputPath}`)
           resolve()
         })
         .on('error', (err: any) => {
@@ -1347,9 +1432,35 @@ export class VideoProcessor {
     })
   }
 
+  /**
+   * Helper function to apply time-based filtering
+   * If startTime and endTime are provided, wraps the filter with enable expression
+   */
+  private applyTimeBasedFilter(
+    command: ffmpeg.FfmpegCommand,
+    filter: string,
+    startTime?: number,
+    endTime?: number
+  ): ffmpeg.FfmpegCommand {
+    if (startTime !== undefined && endTime !== undefined && endTime > startTime) {
+      // Apply filter only between startTime and endTime
+      const enabledFilter = `${filter}:enable='between(t,${startTime},${endTime})'`
+      console.log(`⏰ Applying time-based filter: ${startTime}s to ${endTime}s`)
+      return command.videoFilters(enabledFilter)
+    } else if (startTime !== undefined) {
+      // Apply filter from startTime onwards
+      const enabledFilter = `${filter}:enable='gte(t,${startTime})'`
+      console.log(`⏰ Applying time-based filter: from ${startTime}s onwards`)
+      return command.videoFilters(enabledFilter)
+    }
+    // No time range, apply to entire video
+    return command.videoFilters(filter)
+  }
+
   private applyColorGrade(
     command: ffmpeg.FfmpegCommand,
-    preset: string
+    preset: string,
+    params?: { startTime?: number; endTime?: number }
   ): ffmpeg.FfmpegCommand {
     const presets: { [key: string]: string } = {
       'warm': 'eq=gamma=1.1:saturation=1.1:brightness=0.05',
@@ -1382,69 +1493,75 @@ export class VideoProcessor {
     }
 
     const filter = presets[preset?.toLowerCase() || '']
-    return filter ? command.videoFilters(filter) : command
+    if (!filter) return command
+    
+    // Apply time-based filtering if startTime/endTime provided
+    const startTime = params?.startTime
+    const endTime = params?.endTime
+    return this.applyTimeBasedFilter(command, filter, startTime, endTime)
   }
 
   private applyEffect(
     command: ffmpeg.FfmpegCommand,
     params: any
   ): ffmpeg.FfmpegCommand {
-    const { preset, intensity = 0.5 } = params
+    const { preset, intensity = 0.5, startTime, endTime } = params
     const presetName = preset?.toLowerCase()
     
     switch (presetName) {
       case 'blur':
-        return command.videoFilters(`boxblur=${2 + intensity * 4}:1`)
+        return this.applyTimeBasedFilter(command, `boxblur=${2 + intensity * 4}:1`, startTime, endTime)
       case 'glow':
-        return command.videoFilters('curves=preset=strong_contrast')
+        return this.applyTimeBasedFilter(command, 'curves=preset=strong_contrast', startTime, endTime)
       case 'vhs':
-        return command.videoFilters('noise=alls=20:allf=t+u')
+        return this.applyTimeBasedFilter(command, 'noise=alls=20:allf=t+u', startTime, endTime)
       case 'motion':
-        return command.videoFilters('hue=h=45')
+        return this.applyTimeBasedFilter(command, 'hue=h=45', startTime, endTime)
       case 'film grain':
-        return command.videoFilters('noise=alls=10:allf=t')
+        return this.applyTimeBasedFilter(command, 'noise=alls=10:allf=t', startTime, endTime)
       case 'lens flare':
-        return command.videoFilters('eq=brightness=0.1:contrast=1.2')
+        return this.applyTimeBasedFilter(command, 'eq=brightness=0.1:contrast=1.2', startTime, endTime)
       case 'bokeh':
-        return command.videoFilters('boxblur=10:5')
+        return this.applyTimeBasedFilter(command, 'boxblur=10:5', startTime, endTime)
       case 'light leak':
-        return command.videoFilters('eq=brightness=0.15:saturation=1.2')
+        return this.applyTimeBasedFilter(command, 'eq=brightness=0.15:saturation=1.2', startTime, endTime)
       case 'pixelate':
-        return command.videoFilters(`scale=iw/10:ih/10,scale=iw*10:ih*10:flags=neighbor`)
+        return this.applyTimeBasedFilter(command, `scale=iw/10:ih/10,scale=iw*10:ih*10:flags=neighbor`, startTime, endTime)
       case 'distortion':
-        return command.videoFilters('lenscorrection=k1=0.2')
+        return this.applyTimeBasedFilter(command, 'lenscorrection=k1=0.2', startTime, endTime)
       case 'chromatic aberration':
-        return command.videoFilters('rgbashift=rh=2:gh=-2:bh=4')
+        return this.applyTimeBasedFilter(command, 'rgbashift=rh=2:gh=-2:bh=4', startTime, endTime)
       case 'shake':
-        return command.videoFilters('crop=iw-20:ih-20:random(1)*40:random(1)*40')
+        return this.applyTimeBasedFilter(command, 'crop=iw-20:ih-20:random(1)*40:random(1)*40', startTime, endTime)
       case 'sparkle':
-        return command.videoFilters('eq=brightness=0.1:contrast=1.3')
+        return this.applyTimeBasedFilter(command, 'eq=brightness=0.1:contrast=1.3', startTime, endTime)
       case 'shadow pulse':
-        return command.videoFilters('vignette=PI/6')
+        return this.applyTimeBasedFilter(command, 'vignette=PI/6', startTime, endTime)
       case 'dreamy glow':
-        return command.videoFilters('boxblur=4:2,eq=brightness=0.1:saturation=1.2')
+        return this.applyTimeBasedFilter(command, 'boxblur=4:2,eq=brightness=0.1:saturation=1.2', startTime, endTime)
       case 'glitch flicker':
-        return command.videoFilters('hue=s=300')
+        return this.applyTimeBasedFilter(command, 'hue=s=300', startTime, endTime)
       case 'zoom-in pulse':
-        return command.videoFilters('zoompan=z=1.1:d=125')
+        return this.applyTimeBasedFilter(command, 'zoompan=z=1.1:d=125', startTime, endTime)
       case 'soft focus':
-        return command.videoFilters('boxblur=3:1')
+        return this.applyTimeBasedFilter(command, 'boxblur=3:1', startTime, endTime)
       case 'old film':
-        return command.videoFilters('noise=alls=15:allf=t+u,hue=s=0.8')
+        return this.applyTimeBasedFilter(command, 'noise=alls=15:allf=t+u,hue=s=0.8', startTime, endTime)
       case 'dust overlay':
-        return command.videoFilters('noise=alls=5:allf=t+u')
+        return this.applyTimeBasedFilter(command, 'noise=alls=5:allf=t+u', startTime, endTime)
       case 'light rays':
-        return command.videoFilters('eq=brightness=0.05:contrast=1.4')
+        return this.applyTimeBasedFilter(command, 'eq=brightness=0.05:contrast=1.4', startTime, endTime)
       case 'mirror':
+        // Mirror uses complexFilter, time-based filtering not easily supported
         command.complexFilter('[0:v]crop=iw/2:ih:0:0[v1];[v1][v1]hstack[v]')
         command.outputOptions('-map', '[v]')
         return command
       case 'tilt shift':
-        return command.videoFilters('vignette=PI/4')
+        return this.applyTimeBasedFilter(command, 'vignette=PI/4', startTime, endTime)
       case 'fisheye':
-        return command.videoFilters('lenscorrection=k1=0.5')
+        return this.applyTimeBasedFilter(command, 'lenscorrection=k1=0.5', startTime, endTime)
       case 'bloom':
-        return command.videoFilters('boxblur=8:3,eq=brightness=0.1')
+        return this.applyTimeBasedFilter(command, 'boxblur=8:3,eq=brightness=0.1', startTime, endTime)
       default:
         console.warn(`⚠️ Unknown effect preset: ${preset}, applying default`)
         return command
@@ -1455,7 +1572,7 @@ export class VideoProcessor {
     command: ffmpeg.FfmpegCommand,
     params: any
   ): ffmpeg.FfmpegCommand {
-    const { text, preset, position = 'bottom', fontSize, fontColor, backgroundColor } = params
+    const { text, preset, position = 'bottom', fontSize, fontColor, backgroundColor, startTime, endTime } = params
     
     // If custom properties are provided, use them instead of preset
     if (fontSize || fontColor || backgroundColor) {
@@ -1516,7 +1633,16 @@ export class VideoProcessor {
       filterParts.push(`boxborderw=${styleConfig.box.borderWidth}`)
     }
     
-    const drawtextFilter = `drawtext=${filterParts.join(':')}`
+    let drawtextFilter = `drawtext=${filterParts.join(':')}`
+    
+    // Apply time-based filtering if startTime/endTime provided
+    if (startTime !== undefined && endTime !== undefined && endTime > startTime) {
+      drawtextFilter = `${drawtextFilter}:enable='between(t,${startTime},${endTime})'`
+      console.log(`⏰ Text will appear from ${startTime}s to ${endTime}s`)
+    } else if (startTime !== undefined) {
+      drawtextFilter = `${drawtextFilter}:enable='gte(t,${startTime})'`
+      console.log(`⏰ Text will appear from ${startTime}s onwards`)
+    }
     
     console.log(`📝 Applying text style "${preset}" with config:`, styleConfig)
     console.log(`📝 Drawtext filter: ${drawtextFilter}`)
@@ -1893,18 +2019,38 @@ export class VideoProcessor {
 
   private applyFilter(
     command: ffmpeg.FfmpegCommand,
-    type: string
+    type: string,
+    params?: { startTime?: number; endTime?: number; value?: number }
   ): ffmpeg.FfmpegCommand {
-    switch (type) {
+    const { startTime, endTime, value } = params || {}
+    let filter: string
+    
+    switch (type.toLowerCase()) {
       case 'blur':
-        return command.videoFilters('boxblur=2:1')
+        filter = 'boxblur=2:1'
+        break
       case 'sharpen':
-        return command.videoFilters('unsharp=5:5:1.0:5:5:0.0')
+        filter = 'unsharp=5:5:1.0:5:5:0.0'
+        break
       case 'grayscale':
-        return command.videoFilters('hue=s=0')
+        filter = 'hue=s=0'
+        break
+      case 'saturation':
+        // value is multiplier: 1.0 = normal, >1.0 = increase, <1.0 = decrease
+        const satValue = value !== undefined ? value : 1.0
+        filter = `eq=saturation=${satValue}`
+        break
+      case 'noise':
+      case 'noise reduction':
+        // value is noise strength (0-100), default to 20
+        const noiseStrength = value !== undefined ? Math.max(0, Math.min(100, value)) : 20
+        filter = `noise=alls=${noiseStrength}:allf=t+u`
+        break
       default:
         return command
     }
+    
+    return this.applyTimeBasedFilter(command, filter, startTime, endTime)
   }
 
   private applyTransition(
@@ -2038,12 +2184,10 @@ export class VideoProcessor {
     // FFmpeg subtitles filter needs absolute path with proper escaping
     const absolutePath = path.resolve(subtitleFilePath)
     
-    // For Windows, FFmpeg accepts paths with forward slashes or escaped backslashes
-    // Best approach: convert to forward slashes and escape special characters
+    // FFmpeg on Windows works best with forward slashes in filter paths
+    // Even on Windows, use forward slashes for consistency with input path
     const normalizedPath = absolutePath.replace(/\\/g, '/')
-    
-    // Escape colons (Windows drive letters) and single quotes for FFmpeg filter
-    // FFmpeg filter syntax: subtitles='path' or subtitles="path"
+    // Escape single quotes in the path for the filter
     const escapedPath = normalizedPath.replace(/'/g, "\\'")
     
     // Use absolute path with single quotes (FFmpeg standard)
@@ -2052,6 +2196,7 @@ export class VideoProcessor {
     console.log(`🎬 Using subtitles filter: ${subtitleFilter}`)
     console.log(`📁 ASS file absolute path: ${absolutePath}`)
     console.log(`📁 Normalized path (forward slashes): ${normalizedPath}`)
+    console.log(`📁 Escaped path for filter: ${escapedPath}`)
     
     // Apply subtitle filter
     command.videoFilters(subtitleFilter)

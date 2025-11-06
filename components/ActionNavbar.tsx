@@ -16,6 +16,9 @@ interface ActionNavbarProps {
   onPublish?: () => void
   onOpenVIAProfiles?: () => void // Open VIA Profiles modal
   onOpenBrandKits?: () => void // Open Brand Kits modal
+  onOpenPreview?: () => void // Open Preview panel
+  onOpenTemplates?: () => void // Open Templates panel
+  onOpenAutoEnhance?: () => void // Open Auto-Enhance panel
 }
 
 const textPresets = [
@@ -99,7 +102,7 @@ const features = [
   },
 ]
 
-export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave, onExport, onDownload, onShare, onPublish, onOpenVIAProfiles, onOpenBrandKits }: ActionNavbarProps) {
+export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave, onExport, onDownload, onShare, onPublish, onOpenVIAProfiles, onOpenBrandKits, onOpenPreview, onOpenTemplates, onOpenAutoEnhance }: ActionNavbarProps) {
   const { data: session } = useSession()
   const router = useRouter()
   const [imageError, setImageError] = useState(false)
@@ -107,6 +110,8 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
   const [panelPosition, setPanelPosition] = useState<{ [key: string]: { left: number; top: number } }>({})
   const panelRefs = useRef<{ [key: string]: HTMLDivElement | null }>({})
   const buttonRefs = useRef<{ [key: string]: HTMLButtonElement | null }>({})
+  const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false)
+  const moreMenuRef = useRef<HTMLDivElement | null>(null)
 
   // Update panel position when active panel changes
   useEffect(() => {
@@ -197,13 +202,18 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
           }
         }
       }
+      
+      // Close more menu if clicking outside
+      if (isMoreMenuOpen && moreMenuRef.current && !moreMenuRef.current.contains(event.target as Node)) {
+        setIsMoreMenuOpen(false)
+      }
     }
 
-    if (activePanel) {
+    if (activePanel || isMoreMenuOpen) {
       document.addEventListener('mousedown', handleClickOutside)
       return () => document.removeEventListener('mousedown', handleClickOutside)
     }
-  }, [activePanel])
+  }, [activePanel, isMoreMenuOpen])
 
   const handlePresetClick = (feature: typeof features[0], preset: string) => {
     // Generate natural language commands that VIA Assistant can understand
@@ -284,10 +294,10 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
 
   return (
     <>
-      <nav className="fixed top-0 left-0 right-0 z-50 px-4 sm:px-6 py-3 backdrop-blur-[12px] bg-[rgba(15,15,30,0.6)] border-b border-white/8">
-        <div className="max-w-7xl mx-auto flex items-center justify-between gap-4">
+      <nav className="fixed top-0 left-0 right-0 z-50 px-2 sm:px-4 py-2 sm:py-3 backdrop-blur-[12px] bg-[rgba(15,15,30,0.6)] border-b border-white/8">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-2 sm:gap-4">
           {/* Left: Feature Tabs */}
-          <div className="flex-1 flex items-center gap-2 sm:gap-3 overflow-x-auto scrollbar-hide">
+          <div className="flex-1 flex items-center gap-1.5 sm:gap-2 overflow-x-auto scrollbar-hide min-w-0">
             {features.map((feature, index) => (
               <div key={feature.label} className="relative">
                 <motion.button
@@ -300,7 +310,7 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
                   whileHover={{ scale: 1.05, y: -2 }}
                   whileTap={{ scale: 0.95 }}
                   onClick={() => handleFeatureButtonClick(feature)}
-                  className={`flex items-center gap-1 sm:gap-2 px-3 sm:px-4 py-2 rounded-xl transition-all duration-300 group relative ${
+                  className={`flex items-center gap-1 sm:gap-2 px-2 sm:px-3 py-1.5 sm:py-2 rounded-xl transition-all duration-300 group relative whitespace-nowrap flex-shrink-0 ${
                     activePanel === feature.label
                       ? 'bg-white/15 border border-vedit-purple/50 shadow-glow'
                       : 'bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-purple/30'
@@ -366,85 +376,146 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
-            className="flex items-center gap-2 sm:gap-3 flex-shrink-0"
+            className="flex items-center gap-1 sm:gap-2 flex-shrink-0"
           >
-            {/* V-Port Actions */}
-            <div className="hidden md:flex items-center gap-2">
-              {/* VIA Features */}
-              {onOpenVIAProfiles && (
+            {/* Primary Actions - Always Visible */}
+            <div className="hidden md:flex items-center gap-1 sm:gap-1.5">
+              {/* Essential Features - Compact */}
+              {onOpenTemplates && (
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={onOpenVIAProfiles}
-                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-purple/50 text-white text-xs font-medium transition-all duration-200"
-                  title="VIA Voice Profiles"
+                  onClick={onOpenTemplates}
+                  className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-purple/50 text-white text-xs font-medium transition-all duration-200"
+                  title="Effect Templates"
                 >
-                  🎙️ Profiles
+                  🎨
                 </motion.button>
               )}
-              {onOpenBrandKits && (
+              {onOpenAutoEnhance && (
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={onOpenBrandKits}
-                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-purple/50 text-white text-xs font-medium transition-all duration-200"
-                  title="Brand Kits"
+                  onClick={onOpenAutoEnhance}
+                  className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-pink/50 text-white text-xs font-medium transition-all duration-200"
+                  title="Smart Auto-Enhance"
                 >
-                  🎨 Brands
+                  🤖
                 </motion.button>
               )}
               
               {/* Project Actions */}
-              <div className="h-6 w-px bg-white/10 mx-1" />
+              <div className="h-5 w-px bg-white/10 mx-0.5" />
               
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={onSave}
-                className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-blue/50 text-white text-xs font-medium transition-all duration-200"
+                className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-blue/50 text-white text-xs font-medium transition-all duration-200"
                 title="Save Project"
               >
-                💾 Save
+                💾
               </motion.button>
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={onExport}
-                className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-purple/50 text-white text-xs font-medium transition-all duration-200"
+                className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-purple/50 text-white text-xs font-medium transition-all duration-200"
                 title="Export Video"
               >
-                📤 Export
+                📤
               </motion.button>
-              {onDownload && (
+              
+              {/* More Menu Button */}
+              <div className="relative" ref={moreMenuRef}>
                 <motion.button
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
-                  onClick={onDownload}
-                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-blue/50 text-white text-xs font-medium transition-all duration-200"
-                  title="Download Current Video"
+                  onClick={() => setIsMoreMenuOpen(!isMoreMenuOpen)}
+                  className="px-2 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-purple/50 text-white text-xs font-medium transition-all duration-200"
+                  title="More Options"
                 >
-                  ⬇️ Download
+                  ⋮
                 </motion.button>
-              )}
-              {onShare && (
-                <motion.button
-                  whileHover={{ scale: 1.05 }}
-                  whileTap={{ scale: 0.95 }}
-                  onClick={onShare}
-                  className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 hover:border-vedit-pink/50 text-white text-xs font-medium transition-all duration-200"
-                  title="Share Video Link"
-                >
-                  🔗 Share
-                </motion.button>
-              )}
+                
+                {/* More Menu Dropdown */}
+                <AnimatePresence>
+                  {isMoreMenuOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -10, scale: 0.95 }}
+                      className="absolute right-0 top-full mt-2 w-48 backdrop-blur-xl bg-[rgba(15,15,30,0.95)] border border-white/20 rounded-xl shadow-2xl p-2 z-[100]"
+                    >
+                      {onOpenPreview && (
+                        <button
+                          onClick={() => {
+                            onOpenPreview()
+                            setIsMoreMenuOpen(false)
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 flex items-center gap-2"
+                        >
+                          👁️ Preview
+                        </button>
+                      )}
+                      {onOpenVIAProfiles && (
+                        <button
+                          onClick={() => {
+                            onOpenVIAProfiles()
+                            setIsMoreMenuOpen(false)
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 flex items-center gap-2"
+                        >
+                          🎙️ Profiles
+                        </button>
+                      )}
+                      {onOpenBrandKits && (
+                        <button
+                          onClick={() => {
+                            onOpenBrandKits()
+                            setIsMoreMenuOpen(false)
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 flex items-center gap-2"
+                        >
+                          🎨 Brands
+                        </button>
+                      )}
+                      {onDownload && (
+                        <button
+                          onClick={() => {
+                            onDownload()
+                            setIsMoreMenuOpen(false)
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 flex items-center gap-2"
+                        >
+                          ⬇️ Download
+                        </button>
+                      )}
+                      {onShare && (
+                        <button
+                          onClick={() => {
+                            onShare()
+                            setIsMoreMenuOpen(false)
+                          }}
+                          className="w-full px-3 py-2 text-left text-sm text-white/90 hover:text-white hover:bg-white/10 rounded-lg transition-all duration-200 flex items-center gap-2"
+                        >
+                          🔗 Share
+                        </button>
+                      )}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+              
               <motion.button
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={onPublish}
-                className="px-3 py-2 rounded-lg bg-gradient-to-r from-vedit-pink/80 via-vedit-purple/80 to-vedit-blue/80 hover:from-vedit-pink hover:via-vedit-purple hover:to-vedit-blue text-white text-xs font-semibold transition-all duration-200 shadow-glow"
+                className="px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-vedit-pink/80 via-vedit-purple/80 to-vedit-blue/80 hover:from-vedit-pink hover:via-vedit-purple hover:to-vedit-blue text-white text-xs font-semibold transition-all duration-200 shadow-glow"
                 title="Publish to Social Media"
               >
-                🚀 Publish
+                <span className="hidden sm:inline">🚀 Publish</span>
+                <span className="sm:hidden">🚀</span>
               </motion.button>
             </div>
 

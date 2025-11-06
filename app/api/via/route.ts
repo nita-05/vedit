@@ -8,6 +8,10 @@ import { saveEditHistory } from '@/lib/db'
 import fs from 'fs'
 import path from 'path'
 import ffmpeg from 'fluent-ffmpeg'
+import { validateVideoOperation, validatePublicId, sanitizeInput } from '@/lib/validation'
+import { handleApiError, ValidationError, ProcessingError, logError } from '@/lib/errorHandler'
+import { createRateLimiter } from '@/lib/rateLimiter'
+import { createVideoProcessingTracker } from '@/lib/progressTracker'
 
 // Route configuration for Vercel
 export const dynamic = 'force-dynamic'
@@ -43,6 +47,8 @@ AVAILABLE OPERATIONS & PRESETS:
 
 📝 TEXT STYLES (operation: "addText"):
 Minimal, Bold, Cinematic, Retro, Handwritten, Neon Glow, Typewriter, Glitch, Lower Third, Gradient, Fade-In Title, 3D Text, Caption Overlay, Shadowed, Animated Quote, Headline, Modern Sans, Serif Classic, Story Caption, Kinetic Title, News Banner, Outline Text, Glow Edge, Floating Text
+⏰ TIME-BASED TEXT: Add "startTime" and "endTime" params to show text only during specific time ranges
+Example: "Show text 'Hello' from 2 to 5 seconds" → {"operation": "addText", "params": {"text": "Hello", "preset": "Bold", "startTime": 2, "endTime": 5}}
 
 📝 CAPTIONS/SUBTITLES (operation: "addCaptions"):
 Automatically generate speech-to-text subtitles from video audio. Use when user requests "subtitle" or "captions". 
@@ -58,6 +64,9 @@ NOTE: This operation only works with videos (requires audio). For images, use cu
 
 ✨ EFFECTS (operation: "applyEffect"):
 Blur, Glow, VHS, Motion, Film Grain, Lens Flare, Bokeh, Light Leak, Pixelate, Distortion, Chromatic Aberration, Shake, Sparkle, Shadow Pulse, Dreamy Glow, Glitch Flicker, Zoom-In Pulse, Soft Focus, Old Film, Dust Overlay, Light Rays, Mirror, Tilt Shift, Fisheye, Bloom
+⏰ TIME-BASED EFFECTS: You can apply effects to specific time ranges by adding "startTime" and "endTime" params (in seconds)
+Example: "Apply blur from 3 to 5 seconds" → {"operation": "applyEffect", "params": {"preset": "blur", "startTime": 3, "endTime": 5}}
+Example: "Add blur effect starting from 10 seconds" → {"operation": "applyEffect", "params": {"preset": "blur", "startTime": 10}}
 
 🎬 TRANSITIONS (operation: "addTransition"):
 Fade, Slide, Wipe, Zoom, Cross Dissolve, Blur In/Out, Spin, Morph Cut, Split Reveal, Flash, Zoom Blur, Cube Rotate, 3D Flip, Warp, Ripple, Glitch Transition, Luma Fade, Light Sweep, Stretch Pull, Film Roll, Page Turn, Diagonal Wipe, Motion Blur Transition, Cinematic Cut
@@ -69,6 +78,8 @@ NOTE: Music requires video format. For images, music will convert the image to a
 
 🎨 COLOR GRADING (operation: "colorGrade"):
 Warm, Cool, Vintage, Moody, Teal-Orange, Noir, Sepia, Dreamy, Pastel, Vibrant, Muted, Cyberpunk, Neon, Golden Hour, High Contrast, Washed Film, Studio Tone, Soft Skin, Shadow Boost, Natural Tone, Bright Punch, Black & White, Orange Tint, Monochrome, Cinematic LUT, Sunset Glow
+⏰ TIME-BASED COLOR GRADING: Add "startTime" and "endTime" params to apply color grading to specific segments
+Example: "Apply cinematic color grade from 5 to 15 seconds" → {"operation": "colorGrade", "params": {"preset": "cinematic", "startTime": 5, "endTime": 15}}
 
 🧠 BRAND KITS (operation: "applyBrandKit"):
 Saved Brand Presets, Custom Font Sets, Logo Overlay, Watermark, Brand Colors, Outro Template, Title Template, Intro Animation, Font Pairing, Theme Presets, Typography Sets, Default Layouts, Auto Caption Style, Font Color Presets, Saved LUTs, Signature Animation, Motion Logo, Auto Outro Builder, Font Harmony Set, Voice Style Sync
@@ -80,6 +91,8 @@ OTHER OPERATIONS:
   * If merging different videos: use videoUrls: [url1, url2, ...]
   * If merging clips from same video: use clips: [{url, start, end}, ...]
 - removeClip: Remove specific clip (params: startTime, endTime)
+- filter: Apply filters like blur, sharpen, grayscale (params: type, startTime?, endTime?)
+  * ⏰ TIME-BASED: Can apply filters to specific time ranges using startTime/endTime
 - analyzeVideo: Analyze video content and suggest suitable features (returns suggestions array)
 - brainstormIdeas: Brainstorm video ideas and concepts (params: topic, style, duration, targetAudience)
 - writeScript: Write video scripts (params: topic, length, style, tone, includeVisuals)
@@ -113,6 +126,8 @@ RETURN JSON FORMAT:
     "subtitlePosition": "bottom|top|center",  // Custom subtitle position
     "duration": 3,  // in seconds
     "intensity": 0.5,  // 0-1 for effects
+    "startTime": 3,  // Start time in seconds for time-based effects (optional)
+    "endTime": 5,  // End time in seconds for time-based effects (optional)
     "speed": 1.0,  // Video speed (0.5 = slow, 1.0 = normal, 2.0 = fast)
     "rotation": 0,  // Rotation in degrees (-180 to 180)
     "crop": {"x": 0, "y": 0, "width": 100, "height": 100},  // Crop coordinates (percentage)
@@ -381,22 +396,59 @@ MODIFYING EXISTING TEXT/SUBTITLES:
 
 When interpreting commands, be specific about which preset is being requested and match it exactly from the available presets above. Always prioritize custom properties when user specifies them explicitly.`
 
+// Rate limiter - 20 requests per minute per user
+const rateLimiter = createRateLimiter(20, 60000)
+
 export async function POST(request: NextRequest) {
   try {
-    const session = await getServerSession(authOptions)
-    
-    if (!session?.user?.email) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    const { prompt, videoPublicId, videoUrl, mediaType, allMediaUrls, selectedClips } = await request.json()
-
-    if (!prompt || !videoPublicId) {
+    // Rate limiting
+    const rateLimitResult = rateLimiter(request)
+    if (!rateLimitResult.allowed) {
       return NextResponse.json(
-        { error: 'Missing prompt or videoPublicId' },
-        { status: 400 }
+        {
+          error: 'Rate limit exceeded',
+          message: 'Too many requests. Please wait a moment and try again.',
+        },
+        {
+          status: 429,
+          headers: rateLimitResult.headers,
+        }
       )
     }
+
+    // Authentication
+    const session = await getServerSession(authOptions)
+    if (!session?.user?.email) {
+      throw new ValidationError('Unauthorized - Please sign in to continue')
+    }
+
+    // Parse and validate request body
+    let body
+    try {
+      body = await request.json()
+    } catch (error) {
+      throw new ValidationError('Invalid JSON in request body')
+    }
+
+    const { prompt, videoPublicId, videoUrl, mediaType, allMediaUrls, selectedClips } = body
+
+    // Validate required fields
+    if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
+      throw new ValidationError('Prompt is required and must be a non-empty string')
+    }
+
+    if (!videoPublicId || typeof videoPublicId !== 'string') {
+      throw new ValidationError('Video public ID is required')
+    }
+
+    // Validate public ID format
+    const publicIdValidation = validatePublicId(videoPublicId)
+    if (!publicIdValidation.valid) {
+      throw new ValidationError(`Invalid video public ID: ${publicIdValidation.errors.join(', ')}`)
+    }
+
+    // Sanitize input
+    const sanitizedPrompt = sanitizeInput(prompt)
     
     // Detect if media is image or video
     const isImage = mediaType === 'image' || videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i)
@@ -404,7 +456,7 @@ export async function POST(request: NextRequest) {
     // Use provided videoUrl if available, otherwise fetch from Cloudinary
     const inputVideoUrl = videoUrl
 
-    // Call OpenAI to interpret the command using gpt-4o or gpt-5
+    // Call OpenAI to interpret the command
     const model = process.env.OPENAI_MODEL || 'gpt-4o'
     let completion
     try {
@@ -412,30 +464,54 @@ export async function POST(request: NextRequest) {
         model: model,
         messages: [
           { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: prompt },
+          { role: 'user', content: sanitizedPrompt },
         ],
         response_format: { type: 'json_object' },
-        max_tokens: 500, // Reduced for faster responses
-        temperature: 0.3, // Lower temperature for faster, more consistent responses
+        max_tokens: 500,
+        temperature: 0.3,
       })
     } catch (openaiError: any) {
-      console.error('❌ OpenAI API error:', openaiError)
-      // Check if it's a network error
+      logError(openaiError, { operation: 'openai_api_call', prompt: sanitizedPrompt.substring(0, 100) })
+      
       if (openaiError.code === 'ENOTFOUND' || openaiError.type === 'system') {
-        return NextResponse.json(
-          { 
-            error: 'Network connection error', 
-            details: 'Cannot reach OpenAI API. Please check your internet connection and try again.',
-            message: 'Unable to connect to AI service. Please check your internet connection and try again.'
-          },
-          { status: 503 }
+        throw new ProcessingError(
+          'Unable to connect to AI service. Please check your internet connection and try again.',
+          { code: 'NETWORK_ERROR' }
         )
       }
-      throw openaiError // Re-throw if it's not a network error
+      
+      if (openaiError.status === 429) {
+        throw new ProcessingError(
+          'AI service is temporarily unavailable. Please try again in a moment.',
+          { code: 'RATE_LIMIT_ERROR' }
+        )
+      }
+      
+      throw new ProcessingError(
+        'Failed to process your request. Please try again.',
+        { code: 'AI_SERVICE_ERROR', details: openaiError.message }
+      )
     }
 
-    const instruction = JSON.parse(completion.choices[0].message.content || '{}')
+    // Parse and validate instruction
+    let instruction
+    try {
+      const content = completion.choices[0].message.content || '{}'
+      instruction = JSON.parse(content)
+    } catch (parseError) {
+      logError(parseError, { operation: 'parse_instruction', content: completion.choices[0].message.content })
+      throw new ProcessingError('Failed to parse AI response. Please try again.')
+    }
+
     console.log('🤖 OpenAI instruction:', JSON.stringify(instruction, null, 2))
+
+    // Validate operation parameters if operation exists
+    if (instruction.operation && instruction.params) {
+      const validation = validateVideoOperation(instruction.operation, instruction.params)
+      if (!validation.valid) {
+        throw new ValidationError(`Invalid operation parameters: ${validation.errors.join(', ')}`)
+      }
+    }
 
     // Check if this is an interactive question (no operation, just a message)
     if (!instruction.operation && instruction.message) {
@@ -707,11 +783,17 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json(responseData)
   } catch (error) {
-    console.error('VIA API error:', error)
-    return NextResponse.json(
-      { error: 'Failed to process video editing command', details: error instanceof Error ? error.message : 'Unknown error' },
-      { status: 500 }
-    )
+    const errorResponse = handleApiError(error, {
+      endpoint: '/api/via',
+      method: 'POST',
+    })
+    
+    return NextResponse.json(errorResponse.body, {
+      status: errorResponse.status,
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    })
   }
 }
 

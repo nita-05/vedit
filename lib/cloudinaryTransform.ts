@@ -112,6 +112,147 @@ export class CloudinaryTransformProcessor {
     return url
   }
 
+  /**
+   * Apply color grading using Cloudinary transformations
+   */
+  static applyColorGrade(
+    publicId: string,
+    preset: string,
+    resourceType: 'video' | 'image' = 'video'
+  ): string {
+    const presets: { [key: string]: any } = {
+      'warm': { effect: 'art:zorro', overlay: 'colorize:40:yellow' },
+      'cool': { effect: 'art:zorro', overlay: 'colorize:40:blue' },
+      'vintage': { effect: 'art:zorro', colorize: 'sepia:50' },
+      'moody': { effect: 'art:zorro', brightness: -20, contrast: 30 },
+      'cinematic': { effect: 'art:zorro', brightness: 5, contrast: 10, saturation: -10 },
+      'noir': { effect: 'art:zorro', colorize: 'grayscale' },
+      'sepia': { effect: 'art:zorro', colorize: 'sepia:100' },
+      'dreamy': { effect: 'art:zorro', brightness: 5, saturation: -5 },
+      'vibrant': { effect: 'art:zorro', saturation: 40 },
+      'muted': { effect: 'art:zorro', saturation: -30 },
+      'cyberpunk': { effect: 'art:zorro', saturation: 50, brightness: 20 },
+      'neon': { effect: 'art:zorro', saturation: 60, brightness: 10 },
+      'golden hour': { effect: 'art:zorro', overlay: 'colorize:30:gold' },
+      'high contrast': { effect: 'art:zorro', contrast: 50 },
+      'black & white': { effect: 'art:zorro', colorize: 'grayscale' },
+      'monochrome': { effect: 'art:zorro', colorize: 'grayscale' },
+    }
+
+    const presetConfig = presets[preset?.toLowerCase()] || {}
+    const transformations: any[] = []
+
+    if (presetConfig.effect) {
+      transformations.push({ effect: presetConfig.effect })
+    }
+    if (presetConfig.brightness) {
+      transformations.push({ brightness: presetConfig.brightness })
+    }
+    if (presetConfig.contrast) {
+      transformations.push({ contrast: presetConfig.contrast })
+    }
+    if (presetConfig.saturation) {
+      transformations.push({ saturation: presetConfig.saturation })
+    }
+    if (presetConfig.colorize) {
+      transformations.push({ effect: presetConfig.colorize })
+    }
+    if (presetConfig.overlay) {
+      transformations.push({ overlay: presetConfig.overlay })
+    }
+
+    return cloudinary.url(publicId, {
+      resource_type: resourceType,
+      transformation: transformations.length > 0 ? transformations : [{ effect: 'art:zorro' }],
+    })
+  }
+
+  /**
+   * Apply visual effects using Cloudinary transformations
+   */
+  static applyEffect(
+    publicId: string,
+    preset: string,
+    resourceType: 'video' | 'image' = 'video'
+  ): string {
+    const presets: { [key: string]: any } = {
+      'blur': { effect: 'blur:300' },
+      'glow': { effect: 'art:zorro', brightness: 10, contrast: 20 },
+      'vhs': { effect: 'art:zorro', noise: 20 },
+      'film grain': { effect: 'art:zorro', noise: 10 },
+      'bokeh': { effect: 'blur:500' },
+      'pixelate': { effect: 'pixelate:20' },
+      'sharpen': { effect: 'sharpen:100' },
+      'soft focus': { effect: 'blur:200' },
+      'old film': { effect: 'art:zorro', noise: 15, colorize: 'sepia:30' },
+    }
+
+    const presetConfig = presets[preset?.toLowerCase()] || {}
+    const transformations: any[] = []
+
+    if (presetConfig.effect) {
+      transformations.push({ effect: presetConfig.effect })
+    }
+    if (presetConfig.brightness) {
+      transformations.push({ brightness: presetConfig.brightness })
+    }
+    if (presetConfig.contrast) {
+      transformations.push({ contrast: presetConfig.contrast })
+    }
+    if (presetConfig.noise) {
+      transformations.push({ effect: `noise:${presetConfig.noise}` })
+    }
+    if (presetConfig.colorize) {
+      transformations.push({ effect: presetConfig.colorize })
+    }
+
+    return cloudinary.url(publicId, {
+      resource_type: resourceType,
+      transformation: transformations.length > 0 ? transformations : [],
+    })
+  }
+
+  /**
+   * Crop video/image using Cloudinary
+   */
+  static crop(
+    publicId: string,
+    params: { x: number; y: number; width: number; height: number },
+    resourceType: 'video' | 'image' = 'video'
+  ): string {
+    const { x, y, width, height } = params
+    return cloudinary.url(publicId, {
+      resource_type: resourceType,
+      transformation: [
+        {
+          width: width,
+          height: height,
+          x: x,
+          y: y,
+          crop: 'crop',
+        },
+      ],
+    })
+  }
+
+  /**
+   * Rotate video/image using Cloudinary
+   */
+  static rotate(
+    publicId: string,
+    angle: number,
+    resourceType: 'video' | 'image' = 'video'
+  ): string {
+    return cloudinary.url(publicId, {
+      resource_type: resourceType,
+      transformation: [
+        {
+          angle: angle,
+        },
+      ],
+    })
+  }
+
   private static parseColor(color: string): string {
     const colorMap: { [key: string]: string } = {
       'white': 'white',
@@ -126,4 +267,7 @@ export class CloudinaryTransformProcessor {
     return colorMap[color.toLowerCase()] || color || 'white'
   }
 }
+
+
+
 
