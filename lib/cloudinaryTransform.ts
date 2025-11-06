@@ -77,10 +77,10 @@ export class CloudinaryTransformProcessor {
       transformations.push(`bo_3px_solid_${bgColor}`)
     }
 
-    // Build Cloudinary URL
-    const transformString = transformations.join(',')
+    // Build Cloudinary URL - always use HTTPS
     const url = cloudinary.url(publicId, {
       resource_type: 'video',
+      secure: true, // Force HTTPS to avoid mixed content issues
       transformation: [
         {
           overlay: {
@@ -163,6 +163,7 @@ export class CloudinaryTransformProcessor {
 
     return cloudinary.url(publicId, {
       resource_type: resourceType,
+      secure: true, // Force HTTPS to avoid mixed content issues
       transformation: transformations.length > 0 ? transformations : [{ effect: 'art:zorro' }],
     })
   }
@@ -208,6 +209,7 @@ export class CloudinaryTransformProcessor {
 
     return cloudinary.url(publicId, {
       resource_type: resourceType,
+      secure: true, // Force HTTPS to avoid mixed content issues
       transformation: transformations.length > 0 ? transformations : [],
     })
   }
@@ -223,6 +225,7 @@ export class CloudinaryTransformProcessor {
     const { x, y, width, height } = params
     return cloudinary.url(publicId, {
       resource_type: resourceType,
+      secure: true, // Force HTTPS to avoid mixed content issues
       transformation: [
         {
           width: width,
@@ -245,6 +248,7 @@ export class CloudinaryTransformProcessor {
   ): string {
     return cloudinary.url(publicId, {
       resource_type: resourceType,
+      secure: true, // Force HTTPS to avoid mixed content issues
       transformation: [
         {
           angle: angle,

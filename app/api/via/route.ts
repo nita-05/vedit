@@ -988,6 +988,7 @@ async function processWithCloudinaryFallback(
       const speed = params.speed || 1.0
       return cloudinary.url(publicId, {
         resource_type: resourceType,
+        secure: true, // Force HTTPS to avoid mixed content issues
         transformation: [
           {
             video_codec: { codec: 'auto' },
@@ -1003,16 +1004,19 @@ async function processWithCloudinaryFallback(
       if (filterType === 'blur') {
         return cloudinary.url(publicId, {
           resource_type: resourceType,
+          secure: true, // Force HTTPS to avoid mixed content issues
           transformation: [{ effect: 'blur:300' }],
         })
       } else if (filterType === 'sharpen') {
         return cloudinary.url(publicId, {
           resource_type: resourceType,
+          secure: true, // Force HTTPS to avoid mixed content issues
           transformation: [{ effect: 'sharpen:100' }],
         })
       } else if (filterType === 'grayscale') {
         return cloudinary.url(publicId, {
           resource_type: resourceType,
+          secure: true, // Force HTTPS to avoid mixed content issues
           transformation: [{ effect: 'grayscale' }],
         })
       } else if (filterType === 'saturation') {
@@ -1020,6 +1024,7 @@ async function processWithCloudinaryFallback(
         const saturation = Math.round((satValue - 1) * 100) // Convert to percentage
         return cloudinary.url(publicId, {
           resource_type: resourceType,
+          secure: true, // Force HTTPS to avoid mixed content issues
           transformation: [{ saturation }],
         })
       }
