@@ -241,79 +241,136 @@ let ffmpegPathSet = false
 if (process.env.VERCEL === '1' || process.env.VERCEL_ENV !== undefined) {
   try {
     console.log('🔍 Early FFmpeg initialization for Vercel...')
+    console.log(`📁 CWD: ${process.cwd()}`)
+    console.log(`📁 Platform: ${process.platform}`)
     
-    // Try ffmpeg-static first (most reliable for Vercel)
+    // Comprehensive search for ffmpeg-static binary
     let ffmpegPath: string | null = null
     
+    // Strategy 1: Try require('ffmpeg-static') directly
     try {
       const ffmpegStatic = require('ffmpeg-static')
-      const staticPath = typeof ffmpegStatic === 'string' ? ffmpegStatic : ffmpegStatic.path
+      const staticPath = typeof ffmpegStatic === 'string' ? ffmpegStatic : (ffmpegStatic?.path || ffmpegStatic?.default)
       
       if (staticPath && fs.existsSync(staticPath)) {
         ffmpegPath = staticPath
-        console.log(`✅ Found ffmpeg-static at: ${staticPath}`)
-      } else {
-        // Try to find in node_modules
+        console.log(`✅ Found via require('ffmpeg-static'): ${staticPath}`)
+      }
+    } catch (staticError: any) {
+      console.log(`ℹ️ Direct require failed: ${staticError?.message}`)
+    }
+    
+    // Strategy 2: Search in node_modules directories
+    if (!ffmpegPath) {
+      const searchPaths = [
+        process.cwd(),
+        '/var/task',
+        '/var/task/.next/server',
+        path.join(process.cwd(), 'node_modules'),
+        '/var/task/node_modules',
+        path.resolve(process.cwd(), '..', 'node_modules'),
+      ]
+      
+      for (const basePath of searchPaths) {
         try {
-          const staticModuleDir = path.dirname(require.resolve('ffmpeg-static'))
+          if (!fs.existsSync(basePath)) continue
+          
           const possiblePaths = [
-            path.join(staticModuleDir, 'ffmpeg'),
-            path.join(staticModuleDir, 'vendor', 'ffmpeg'),
-            path.join(staticModuleDir, 'bin', 'ffmpeg'),
+            path.join(basePath, 'ffmpeg-static', 'ffmpeg'),
+            path.join(basePath, 'ffmpeg-static', 'vendor', 'ffmpeg'),
+            path.join(basePath, 'ffmpeg-static', 'bin', 'ffmpeg'),
+            path.join(basePath, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+            path.join(basePath, 'node_modules', 'ffmpeg-static', 'vendor', 'ffmpeg'),
+            path.join(basePath, 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
           ]
+          
           for (const possiblePath of possiblePaths) {
             if (fs.existsSync(possiblePath)) {
               ffmpegPath = possiblePath
-              console.log(`✅ Found ffmpeg-static in module: ${possiblePath}`)
+              console.log(`✅ Found in search paths: ${possiblePath}`)
               break
             }
           }
-        } catch (resolveError) {
-          console.log(`ℹ️ Could not resolve ffmpeg-static module: ${resolveError}`)
+          
+          if (ffmpegPath) break
+        } catch (searchError) {
+          // Continue to next path
         }
       }
-    } catch (staticError) {
-      console.log(`ℹ️ ffmpeg-static not available: ${staticError}`)
+    }
+    
+    // Strategy 3: Try require.resolve to find module directory
+    if (!ffmpegPath) {
+      try {
+        const staticModulePath = require.resolve('ffmpeg-static')
+        const staticModuleDir = path.dirname(staticModulePath)
+        console.log(`📦 Resolved ffmpeg-static module at: ${staticModuleDir}`)
+        
+        const modulePaths = [
+          path.join(staticModuleDir, 'ffmpeg'),
+          path.join(staticModuleDir, 'vendor', 'ffmpeg'),
+          path.join(staticModuleDir, 'bin', 'ffmpeg'),
+          path.join(staticModuleDir, '..', 'ffmpeg'),
+          path.join(path.dirname(staticModuleDir), 'ffmpeg'),
+        ]
+        
+        for (const modulePath of modulePaths) {
+          if (fs.existsSync(modulePath)) {
+            ffmpegPath = modulePath
+            console.log(`✅ Found via require.resolve: ${modulePath}`)
+            break
+          }
+        }
+      } catch (resolveError: any) {
+        console.log(`ℹ️ require.resolve failed: ${resolveError?.message}`)
+      }
     }
     
     // If found, copy to /tmp and use it
     if (ffmpegPath && fs.existsSync(ffmpegPath)) {
       const tmpFFmpegPath = '/tmp/ffmpeg'
       try {
-        // Always copy to /tmp on Vercel (read-only filesystem)
         console.log(`📋 Copying FFmpeg from ${ffmpegPath} to ${tmpFFmpegPath}...`)
         const binaryData = fs.readFileSync(ffmpegPath)
+        console.log(`📦 Binary size: ${binaryData.length} bytes`)
+        
         fs.writeFileSync(tmpFFmpegPath, binaryData, { mode: 0o755 })
         
         // Make executable
         try {
           execSync(`chmod +x "${tmpFFmpegPath}"`, { stdio: 'ignore' })
         } catch (chmodError) {
-          // Ignore - might already be executable via writeFile mode
+          // Ignore - might already be executable
         }
         
         // Verify it works
         const versionOutput = execSync(`${tmpFFmpegPath} -version`, { 
           stdio: 'pipe', 
-          timeout: 3000,
+          timeout: 5000,
           encoding: 'utf8'
         })
         
         if (versionOutput && versionOutput.includes('ffmpeg version')) {
           ffmpeg.setFfmpegPath(tmpFFmpegPath)
           ffmpegPathSet = true
+          const versionLine = versionOutput.split('\n')[0]
           console.log(`✅ FFmpeg initialized successfully from /tmp: ${tmpFFmpegPath}`)
-          console.log(`✅ FFmpeg version: ${versionOutput.split('\n')[0]}`)
+          console.log(`✅ FFmpeg version: ${versionLine}`)
         } else {
-          throw new Error('FFmpeg version check failed')
+          throw new Error('FFmpeg version check failed - no version output')
         }
       } catch (copyError: any) {
         console.error(`❌ Failed to copy/verify FFmpeg: ${copyError?.message}`)
-        console.error(`❌ Stack: ${copyError?.stack}`)
+        console.error(`❌ Error code: ${copyError?.code}`)
+        console.error(`❌ Error signal: ${copyError?.signal}`)
+        if (copyError?.stderr) {
+          console.error(`❌ Stderr: ${copyError.stderr.toString()}`)
+        }
         // Will retry at runtime
       }
     } else {
-      console.log(`⚠️ FFmpeg binary not found in ffmpeg-static, will search at runtime`)
+      console.warn(`⚠️ FFmpeg binary not found in any search location`)
+      console.warn(`⚠️ Searched paths: ${process.cwd()}, /var/task, node_modules`)
     }
   } catch (error: any) {
     console.error(`❌ Early FFmpeg initialization failed: ${error?.message}`)
