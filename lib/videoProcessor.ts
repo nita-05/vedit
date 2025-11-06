@@ -724,40 +724,85 @@ export class VideoProcessor {
 
     // On Vercel/Linux, FFmpeg is NOT available system-wide
     // We need to use the bundled binary from ffmpeg-static
+    // CRITICAL: On Vercel, this runs on EVERY function invocation
     if (isVercelOrLinux()) {
+      console.log(`🔍 Runtime FFmpeg initialization for Vercel...`)
+      console.log(`📁 CWD: ${process.cwd()}`)
+      
       // PRIORITY: Try ffmpeg-static first (most reliable for Vercel)
       let foundFFmpeg: string | null = null
       
+      // Strategy 1: Direct require
       try {
         const ffmpegStatic = require('ffmpeg-static')
-        const staticPath = typeof ffmpegStatic === 'string' ? ffmpegStatic : ffmpegStatic.path
+        const staticPath = typeof ffmpegStatic === 'string' 
+          ? ffmpegStatic 
+          : (ffmpegStatic?.path || ffmpegStatic?.default)
         
         if (staticPath && fs.existsSync(staticPath)) {
           foundFFmpeg = staticPath
-          console.log(`✅ Found ffmpeg-static binary: ${staticPath}`)
-        } else {
-          // Try to find in node_modules structure
-          try {
-            const staticModuleDir = path.dirname(require.resolve('ffmpeg-static'))
-            const possiblePaths = [
-              path.join(staticModuleDir, 'ffmpeg'),
-              path.join(staticModuleDir, 'vendor', 'ffmpeg'),
-              path.join(staticModuleDir, 'bin', 'ffmpeg'),
-              path.join(staticModuleDir, '..', 'ffmpeg'),
-            ]
-            for (const possiblePath of possiblePaths) {
-              if (fs.existsSync(possiblePath)) {
-                foundFFmpeg = possiblePath
-                console.log(`✅ Found ffmpeg-static in module: ${possiblePath}`)
-                break
-              }
-            }
-          } catch (resolveError) {
-            console.log(`ℹ️ Could not resolve ffmpeg-static: ${resolveError}`)
-          }
+          console.log(`✅ Found via require('ffmpeg-static'): ${staticPath}`)
         }
-      } catch (staticError) {
-        console.log(`ℹ️ ffmpeg-static require failed: ${staticError}`)
+      } catch (staticError: any) {
+        console.log(`ℹ️ Direct require failed: ${staticError?.message}`)
+      }
+      
+      // Strategy 2: Search in Vercel serverless paths
+      if (!foundFFmpeg) {
+        const searchPaths = [
+          '/var/task',
+          '/var/task/node_modules',
+          '/var/task/.next/server',
+          process.cwd(),
+          path.join(process.cwd(), 'node_modules'),
+        ]
+        
+        for (const basePath of searchPaths) {
+          if (!fs.existsSync(basePath)) continue
+          
+          const possiblePaths = [
+            path.join(basePath, 'ffmpeg-static', 'ffmpeg'),
+            path.join(basePath, 'ffmpeg-static', 'vendor', 'ffmpeg'),
+            path.join(basePath, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
+            path.join(basePath, 'node_modules', 'ffmpeg-static', 'vendor', 'ffmpeg'),
+          ]
+          
+          for (const possiblePath of possiblePaths) {
+            if (fs.existsSync(possiblePath)) {
+              foundFFmpeg = possiblePath
+              console.log(`✅ Found in search path: ${possiblePath}`)
+              break
+            }
+          }
+          
+          if (foundFFmpeg) break
+        }
+      }
+      
+      // Strategy 3: require.resolve
+      if (!foundFFmpeg) {
+        try {
+          const staticModulePath = require.resolve('ffmpeg-static')
+          const staticModuleDir = path.dirname(staticModulePath)
+          console.log(`📦 Resolved module at: ${staticModuleDir}`)
+          
+          const modulePaths = [
+            path.join(staticModuleDir, 'ffmpeg'),
+            path.join(staticModuleDir, 'vendor', 'ffmpeg'),
+            path.join(staticModuleDir, 'bin', 'ffmpeg'),
+            path.join(path.dirname(staticModuleDir), 'ffmpeg'),
+          ]
+          
+          for (const modulePath of modulePaths) {
+            if (fs.existsSync(modulePath)) {
+              foundFFmpeg = modulePath
+              console.log(`✅ Found via require.resolve: ${modulePath}`)
+              break
+            }
+          }
+        } catch (resolveError: any) {
+          console.log(`ℹ️ require.resolve failed: ${resolveError?.message}`)
+        }
       }
       
       // If found, copy to /tmp and use it
@@ -765,44 +810,73 @@ export class VideoProcessor {
         const tmpFFmpegPath = '/tmp/ffmpeg'
         try {
           // Always copy to /tmp on Vercel (filesystem is read-only except /tmp)
-          console.log(`📋 Copying FFmpeg to /tmp for Vercel...`)
-          const binaryData = fs.readFileSync(foundFFmpeg)
-          fs.writeFileSync(tmpFFmpegPath, binaryData, { mode: 0o755 })
-          
-          // Make executable
-          try {
-            execSync(`chmod +x "${tmpFFmpegPath}"`, { stdio: 'ignore' })
-          } catch {
-            // Ignore - writeFile with mode should be enough
+          // Check if already exists and is valid
+          let needsCopy = true
+          if (fs.existsSync(tmpFFmpegPath)) {
+            try {
+              execSync(`${tmpFFmpegPath} -version`, { stdio: 'pipe', timeout: 2000 })
+              // Already exists and works, use it
+              ffmpeg.setFfmpegPath(tmpFFmpegPath)
+              console.log(`✅ Using existing /tmp/ffmpeg (verified)`)
+              return
+            } catch {
+              // Exists but doesn't work, re-copy
+              console.log(`⚠️ /tmp/ffmpeg exists but invalid, re-copying...`)
+            }
           }
           
-          // Verify it works
-          const versionOutput = execSync(`${tmpFFmpegPath} -version`, { 
-            stdio: 'pipe', 
-            timeout: 3000,
-            encoding: 'utf8'
-          })
-          
-          if (versionOutput && versionOutput.includes('ffmpeg version')) {
-            ffmpeg.setFfmpegPath(tmpFFmpegPath)
-            console.log(`✅ FFmpeg ready at /tmp: ${tmpFFmpegPath}`)
-            return
-          } else {
-            throw new Error('FFmpeg version verification failed')
+          if (needsCopy) {
+            console.log(`📋 Copying FFmpeg from ${foundFFmpeg} to /tmp...`)
+            const binaryData = fs.readFileSync(foundFFmpeg)
+            console.log(`📦 Binary size: ${(binaryData.length / 1024 / 1024).toFixed(2)} MB`)
+            
+            fs.writeFileSync(tmpFFmpegPath, binaryData, { mode: 0o755 })
+            
+            // Make executable
+            try {
+              execSync(`chmod +x "${tmpFFmpegPath}"`, { stdio: 'ignore' })
+            } catch {
+              // Ignore - writeFile with mode should be enough
+            }
+            
+            // Verify it works
+            const versionOutput = execSync(`${tmpFFmpegPath} -version`, { 
+              stdio: 'pipe', 
+              timeout: 5000,
+              encoding: 'utf8'
+            })
+            
+            if (versionOutput && versionOutput.includes('ffmpeg version')) {
+              ffmpeg.setFfmpegPath(tmpFFmpegPath)
+              const versionLine = versionOutput.split('\n')[0]
+              console.log(`✅ FFmpeg ready at /tmp: ${tmpFFmpegPath}`)
+              console.log(`✅ FFmpeg version: ${versionLine}`)
+              return
+            } else {
+              throw new Error('FFmpeg version verification failed - no version output')
+            }
           }
         } catch (copyError: any) {
           console.error(`❌ Failed to copy/verify FFmpeg: ${copyError?.message}`)
-          // Try direct path as fallback
+          console.error(`❌ Error code: ${copyError?.code}`)
+          if (copyError?.stderr) {
+            console.error(`❌ Stderr: ${copyError.stderr.toString().substring(0, 200)}`)
+          }
+          // Try direct path as fallback (might work on some Vercel configs)
           try {
+            console.log(`🔄 Trying direct path as fallback: ${foundFFmpeg}`)
             execSync(`chmod +x "${foundFFmpeg}"`, { stdio: 'ignore' })
             execSync(`${foundFFmpeg} -version`, { stdio: 'pipe', timeout: 3000 })
             ffmpeg.setFfmpegPath(foundFFmpeg)
             console.log(`✅ Using FFmpeg directly: ${foundFFmpeg}`)
             return
-          } catch (directError) {
-            console.error(`❌ Direct path also failed: ${directError}`)
+          } catch (directError: any) {
+            console.error(`❌ Direct path also failed: ${directError?.message}`)
           }
         }
+      } else {
+        console.warn(`⚠️ FFmpeg binary not found in any location`)
+        console.warn(`⚠️ Searched paths: /var/task, ${process.cwd()}, node_modules`)
       }
       
       // Fallback: Try getFFmpegInstallerPath (for @ffmpeg-installer/ffmpeg)
