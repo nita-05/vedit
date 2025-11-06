@@ -758,18 +758,47 @@ export default function DashboardPage() {
                               onError: (e: any) => {
                                 console.error('🎥 Video element error:', e)
                                 console.error('🎥 Current URL:', selectedMedia.url)
-                                console.error('🎥 Error details:', JSON.stringify(e, null, 2))
+                                // Safely log error without circular reference issues
+                                try {
+                                  const errorInfo = {
+                                    message: e?.message || e?.toString() || 'Unknown error',
+                                    type: e?.type || 'unknown',
+                                    target: e?.target ? {
+                                      src: e?.target?.src,
+                                      error: e?.target?.error?.code,
+                                    } : null,
+                                  }
+                                  console.error('🎥 Error details:', errorInfo)
+                                } catch (logError) {
+                                  console.error('🎥 Error (could not serialize):', e?.message || String(e))
+                                }
                                 // Don't revert - let user see the error
                               },
                               // Force video element to reload
                               onLoadStart: () => {
                                 console.log('🔄 Video element load started:', selectedMedia.url)
                               },
-                              onLoadedMetadata: () => {
-                                console.log('✅ Video metadata loaded:', selectedMedia.url)
+                              onLoadedMetadata: (e: any) => {
+                                const video = e?.target
+                                if (video && video.duration) {
+                                  const newDuration = video.duration
+                                  console.log('✅ Video metadata loaded:', selectedMedia.url)
+                                  console.log('📊 Video duration:', newDuration, 'seconds')
+                                  console.log('📊 Video duration formatted:', `${Math.floor(newDuration / 60)}:${Math.floor(newDuration % 60).toString().padStart(2, '0')}`)
+                                  // Update duration state
+                                  setDuration(newDuration)
+                                }
                               },
                               onCanPlay: () => {
                                 console.log('✅ Video can play:', selectedMedia.url)
+                              },
+                              onDurationChange: (e: any) => {
+                                const video = e?.target
+                                if (video && video.duration) {
+                                  const newDuration = video.duration
+                                  console.log('⏱️ Duration changed:', newDuration, 'seconds')
+                                  setDuration(newDuration)
+                                }
                               }
                             },
                             // Force video format
