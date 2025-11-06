@@ -755,11 +755,6 @@ export default function DashboardPage() {
                             // Disable caching
                             forceHLS: false,
                             forceDASH: false,
-                            // Ensure proper video handling
-                            html5: {
-                              hlsOptions: {},
-                              dashOptions: {},
-                            }
                           }
                         }}
                         onError={(e) => {
