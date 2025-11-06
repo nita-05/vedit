@@ -796,27 +796,13 @@ export default function DashboardPage() {
                                     console.log('💾 Stored original video duration:', newDuration, 'seconds')
                                   }
                                   
-                                  // For processed videos, if duration is significantly less than original, use original
-                                  // This handles Cloudinary streaming where metadata loads progressively
+                                  // For processed videos, ALWAYS use original duration
+                                  // Cloudinary transformations (grayscale, color grading, etc.) don't change video length
+                                  // Streaming metadata from Cloudinary is often incomplete/unreliable
                                   if (!isOriginal && originalVideoDuration > 0) {
-                                    const durationDiff = originalVideoDuration - newDuration
-                                    const percentDiff = (durationDiff / originalVideoDuration) * 100
-                                    
-                                    console.log('📊 Duration comparison:', {
-                                      original: originalVideoDuration,
-                                      current: newDuration,
-                                      difference: durationDiff,
-                                      percentDiff: percentDiff.toFixed(1) + '%'
-                                    })
-                                    
-                                    // If current duration is less than 80% of original, likely streaming issue
-                                    // Use original duration as fallback
-                                    if (percentDiff > 20 && newDuration < originalVideoDuration * 0.8) {
-                                      console.log('⚠️ Processed video duration seems incomplete (streaming), using original duration as fallback')
-                                      setDuration(originalVideoDuration)
-                                    } else {
-                                      setDuration(newDuration)
-                                    }
+                                    console.log('📊 Using original duration for processed video:', originalVideoDuration, 'seconds')
+                                    console.log('📊 (Cloudinary streaming metadata shows:', newDuration, 'seconds, but video is actually', originalVideoDuration, 'seconds)')
+                                    setDuration(originalVideoDuration)
                                   } else {
                                     setDuration(newDuration)
                                   }
@@ -831,20 +817,12 @@ export default function DashboardPage() {
                                   const newDuration = video.duration
                                   const isOriginal = selectedMedia.url === originalVideoUrl
                                   
-                                  console.log('⏱️ Duration changed:', newDuration, 'seconds')
-                                  
-                                  // For processed videos, only update if duration is close to or exceeds original
-                                  // This prevents showing incomplete durations during streaming
+                                  // For processed videos, ALWAYS use original duration
+                                  // Cloudinary transformations don't change video length, and streaming metadata is unreliable
                                   if (!isOriginal && originalVideoDuration > 0) {
-                                    // If new duration is within 5% of original or exceeds it, use it
-                                    if (newDuration >= originalVideoDuration * 0.95 || newDuration >= originalVideoDuration) {
-                                      console.log('✅ Duration stabilized or reached original length')
-                                      setDuration(newDuration >= originalVideoDuration ? originalVideoDuration : newDuration)
-                                    } else {
-                                      // Still streaming, keep using original duration
-                                      console.log('⏳ Duration still loading, using original duration:', originalVideoDuration)
-                                      setDuration(originalVideoDuration)
-                                    }
+                                    // Always use original duration for processed videos
+                                    // Cloudinary streaming often provides incomplete metadata
+                                    setDuration(originalVideoDuration)
                                   } else {
                                     setDuration(newDuration)
                                   }
@@ -1109,6 +1087,13 @@ export default function DashboardPage() {
                 setMediaItems(updated)
                 setSelectedMedia({ ...selectedMedia, url })
                 setLastProcessedUrl(url) // Track last processed URL
+                
+                // CRITICAL: For processed videos, immediately use original duration
+                // Cloudinary streaming metadata is unreliable and often incomplete
+                if (originalVideoDuration > 0) {
+                  console.log('⏱️ Setting duration to original for processed video:', originalVideoDuration, 'seconds')
+                  setDuration(originalVideoDuration)
+                }
                 
                 // Small delay to ensure state updates propagate
                 await new Promise(resolve => setTimeout(resolve, 10))
