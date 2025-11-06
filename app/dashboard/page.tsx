@@ -917,6 +917,16 @@ export default function DashboardPage() {
                 return
               }
               
+              // CRITICAL: Check if URL is the original (should not happen for processed videos)
+              if (url === originalVideoUrl && originalVideoUrl) {
+                console.error('❌ Dashboard: Received original URL instead of processed URL!')
+                console.error('❌ Dashboard: This should not happen - API should return processed URL')
+                console.error('❌ Dashboard: Original URL:', originalVideoUrl)
+                console.error('❌ Dashboard: Received URL:', url)
+                // Don't update - this is a fallback that shouldn't happen
+                return
+              }
+              
               if (selectedMedia) {
                 // Check if URL actually changed
                 const urlChanged = url !== selectedMedia.url
@@ -931,6 +941,13 @@ export default function DashboardPage() {
                 // IMPORTANT: Only update if URL is different and valid
                 if (!urlChanged) {
                   console.log('⚠️ Dashboard: URL unchanged, skipping update')
+                  return
+                }
+                
+                // CRITICAL: Verify this is NOT the original URL
+                if (isOriginal) {
+                  console.error('❌ Dashboard: Attempted to set original URL as processed URL!')
+                  console.error('❌ Dashboard: This indicates API returned wrong URL')
                   return
                 }
                 
