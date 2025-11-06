@@ -534,7 +534,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Special handling for different operations
-    let processedUrl: string
+    let processedUrl: string | undefined
     if (instruction.operation === 'customSubtitle') {
       // customSubtitle means regenerate captions with custom style/color/size/position
       if (isImage) {
@@ -829,6 +829,18 @@ export async function POST(request: NextRequest) {
           }
         }
       }
+    }
+
+    // Ensure processedUrl is defined
+    if (!processedUrl) {
+      return NextResponse.json(
+        { 
+          error: 'Video processing failed',
+          message: 'Failed to process video. No processed URL was generated. Please check server logs for details.',
+          videoUrl: null,
+        },
+        { status: 500 }
+      )
     }
 
     // Extract public ID from Cloudinary URL for tracking
