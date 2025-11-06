@@ -163,11 +163,21 @@ export class CloudinaryTransformProcessor {
       ? [transformation] 
       : []
 
-    return cloudinary.url(publicId, {
+    const url = cloudinary.url(publicId, {
       resource_type: resourceType,
       secure: true, // Force HTTPS to avoid mixed content issues
       transformation: transformations.length > 0 ? transformations : [],
     })
+    
+    // Add cache-busting timestamp to force browser refresh
+    const timestamp = Date.now()
+    const finalUrl = url.includes('?') 
+      ? `${url}&_t=${timestamp}` 
+      : `${url}?_t=${timestamp}`
+    
+    console.log(`☁️ Generated Cloudinary color grade URL: ${finalUrl.substring(0, 100)}...`)
+    
+    return finalUrl
   }
 
   /**
@@ -209,11 +219,21 @@ export class CloudinaryTransformProcessor {
       transformations.push({ effect: presetConfig.colorize })
     }
 
-    return cloudinary.url(publicId, {
+    const url = cloudinary.url(publicId, {
       resource_type: resourceType,
       secure: true, // Force HTTPS to avoid mixed content issues
       transformation: transformations.length > 0 ? transformations : [],
     })
+    
+    // Add cache-busting timestamp to force browser refresh
+    const timestamp = Date.now()
+    const finalUrl = url.includes('?') 
+      ? `${url}&_t=${timestamp}` 
+      : `${url}?_t=${timestamp}`
+    
+    console.log(`☁️ Generated Cloudinary effect URL: ${finalUrl.substring(0, 100)}...`)
+    
+    return finalUrl
   }
 
   /**
