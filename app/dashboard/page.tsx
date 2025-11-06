@@ -65,13 +65,20 @@ export default function DashboardPage() {
     console.log('🎬 Dashboard: selectedMedia changed:', selectedMedia)
     if (selectedMedia) {
       console.log('🎬 Dashboard: selectedMedia URL:', selectedMedia.url)
-      // Store original URL when first selecting a video
-      if (!originalVideoUrl && selectedMedia.url) {
+      // Store original URL ONLY when first selecting a video (not when URL is updated after processing)
+      // Only set if originalVideoUrl is null AND this is likely the first load (not a processed URL)
+      if (!originalVideoUrl && selectedMedia.url && !selectedMedia.url.includes('_processed') && !selectedMedia.url.includes('e_grayscale') && !selectedMedia.url.includes('e_') && !selectedMedia.url.includes('?_t=')) {
         setOriginalVideoUrl(selectedMedia.url)
         console.log('📌 Dashboard: Stored original video URL:', selectedMedia.url)
+      } else if (originalVideoUrl && selectedMedia.url === originalVideoUrl) {
+        console.log('📌 Dashboard: URL matches original - this is the original video')
+      } else if (originalVideoUrl && selectedMedia.url !== originalVideoUrl) {
+        console.log('📌 Dashboard: URL is different from original - this is a processed video')
+        console.log('📌 Dashboard: Original:', originalVideoUrl)
+        console.log('📌 Dashboard: Current:', selectedMedia.url)
       }
     }
-  }, [selectedMedia, originalVideoUrl])
+  }, [selectedMedia])
 
   // Auto-backup every 5 minutes
   useEffect(() => {
@@ -946,14 +953,19 @@ export default function DashboardPage() {
                 console.log('🎬 Dashboard: To:', url)
                 
                 // Update state - this will trigger ReactPlayer to reload
+                // IMPORTANT: Update videoKey FIRST to force ReactPlayer to unmount old video
+                const newVideoKey = videoKey + 1
+                setVideoKey(newVideoKey) // Force ReactPlayer remount with new URL
+                
+                // Then update the URL - ReactPlayer will remount with new key and new URL
                 setMediaItems(updated)
                 setSelectedMedia({ ...selectedMedia, url })
-                setVideoKey(prev => prev + 1) // Force ReactPlayer remount with new URL
                 setLastProcessedUrl(url) // Track last processed URL
                 
-                console.log('✅ Dashboard: State updated! Video key:', videoKey + 1)
+                console.log('✅ Dashboard: State updated! Video key:', newVideoKey)
                 console.log('✅ Dashboard: New URL set:', url)
-                console.log('✅ Dashboard: ReactPlayer will reload with new URL')
+                console.log('✅ Dashboard: ReactPlayer will remount with key:', newVideoKey, 'and URL:', url)
+                console.log('✅ Dashboard: This will force ReactPlayer to load the NEW video, not cached original')
                 
                 // Show notification if video was actually processed
                 if (urlChanged && !isOriginal) {
