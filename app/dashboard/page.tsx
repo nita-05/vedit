@@ -87,6 +87,8 @@ export default function DashboardPage() {
   const prevUrlRef = useRef<string | null>(null)
   const lastVideoKeyUpdateRef = useRef<number>(0)
   const isManualUpdateRef = useRef<boolean>(false)
+  const lastUrlForCacheBustRef = useRef<string | null>(null)
+  const cacheBustTimestampRef = useRef<number>(0)
   
   useEffect(() => {
     // Skip if this is a manual update (from onVideoUpdate)
@@ -760,8 +762,28 @@ export default function DashboardPage() {
                   {selectedMedia.type === 'video' ? (
                     <>
                       <ReactPlayer
-                        key={`video-${videoKey}-${selectedMedia.url?.split('?')[0]?.split('/').pop() || ''}`}
-                        url={selectedMedia.url || ''}
+                        key={`video-${videoKey}-${selectedMedia.url ? btoa(selectedMedia.url.split('?')[0]).slice(0, 20) : ''}`}
+                        url={(() => {
+                          if (!selectedMedia.url) return ''
+                          const baseUrl = selectedMedia.url.split('?')[0]
+                          // Add cache-busting when URL changes (detected by ref being null or different)
+                          if (lastUrlForCacheBustRef.current !== baseUrl) {
+                            lastUrlForCacheBustRef.current = baseUrl
+                            // Update timestamp for new URL (onVideoUpdate may have set it, but we ensure it's fresh)
+                            cacheBustTimestampRef.current = Date.now()
+                          }
+                          // Use stable cache-busting params (only change when URL or videoKey changes)
+                          const separator = selectedMedia.url.includes('?') ? '&' : '?'
+                          // Remove old cache-busting params and add new ones based on videoKey
+                          const urlWithoutCache = selectedMedia.url.split('?')[0]
+                          const existingParams = selectedMedia.url.includes('?') ? selectedMedia.url.split('?')[1] : ''
+                          const paramsWithoutCache = existingParams.split('&').filter(p => !p.startsWith('_cb=') && !p.startsWith('_t=') && !p.startsWith('_r=')).join('&')
+                          // Use timestamp from ref (set in onVideoUpdate or here)
+                          const timestamp = cacheBustTimestampRef.current || Date.now()
+                          const cacheBust = `_cb=${videoKey}&_t=${timestamp}`
+                          const newParams = paramsWithoutCache ? `${paramsWithoutCache}&${cacheBust}` : cacheBust
+                          return `${urlWithoutCache}?${newParams}`
+                        })()}
                         controls
                         width="100%"
                         height="auto"
@@ -806,6 +828,11 @@ export default function DashboardPage() {
                               // Force video element to reload
                               onLoadStart: () => {
                                 console.log('🔄 Video element load started:', selectedMedia.url)
+                                // Clear any cached video data
+                                if (typeof window !== 'undefined' && 'caches' in window) {
+                                  // Clear video cache if possible
+                                  console.log('🧹 Attempting to clear video cache...')
+                                }
                               },
                               onLoadedMetadata: (e: any) => {
                                 const video = e?.target
@@ -813,10 +840,31 @@ export default function DashboardPage() {
                                   const newDuration = video.duration
                                   const isOriginal = selectedMedia.url === originalVideoUrl
                                   
+                                  // CRITICAL: Verify video element's src matches expected URL
+                                  const videoSrc = video.src || video.currentSrc
+                                  const expectedBaseUrl = selectedMedia.url?.split('?')[0]
+                                  const actualBaseUrl = videoSrc?.split('?')[0]
+                                  
                                   console.log('✅ Video metadata loaded:', selectedMedia.url)
+                                  console.log('📊 Video element src:', videoSrc)
+                                  console.log('📊 Expected URL:', expectedBaseUrl)
+                                  console.log('📊 Actual URL:', actualBaseUrl)
                                   console.log('📊 Video duration:', newDuration, 'seconds')
                                   console.log('📊 Video duration formatted:', `${Math.floor(newDuration / 60)}:${Math.floor(newDuration % 60).toString().padStart(2, '0')}`)
                                   console.log('📊 Is original video:', isOriginal)
+                                  
+                                  // If video element loaded wrong URL, force reload
+                                  if (expectedBaseUrl && actualBaseUrl && expectedBaseUrl !== actualBaseUrl) {
+                                    console.error('⚠️ WARNING: Video element loaded wrong URL!')
+                                    console.error('⚠️ Expected:', expectedBaseUrl)
+                                    console.error('⚠️ Actual:', actualBaseUrl)
+                                    console.error('🔄 Forcing reload with correct URL...')
+                                    // Force reload by updating videoKey
+                                    setTimeout(() => {
+                                      setVideoKey(prev => prev + 1)
+                                    }, 100)
+                                    return
+                                  }
                                   
                                   // Store original video duration
                                   if (isOriginal && newDuration > 0) {
@@ -878,11 +926,38 @@ export default function DashboardPage() {
                             }, 2000)
                           }
                         }}
-                        onReady={() => {
+                        onReady={(player: any) => {
                           console.log('🎥 ReactPlayer ready with URL:', selectedMedia.url)
                           console.log('📊 Dashboard: Is this the original video?', selectedMedia.url === originalVideoUrl)
                           console.log('📊 Dashboard: Original URL:', originalVideoUrl)
                           console.log('📊 Dashboard: Current URL:', selectedMedia.url)
+                          
+                          // Get the actual video element to verify its src
+                          try {
+                            const videoElement = player?.getInternalPlayer?.() || player?.player?.player || null
+                            if (videoElement && videoElement.tagName === 'VIDEO') {
+                              const actualSrc = videoElement.src || videoElement.currentSrc
+                              const expectedBaseUrl = selectedMedia.url?.split('?')[0]
+                              const actualBaseUrl = actualSrc?.split('?')[0]
+                              console.log('📹 ReactPlayer internal video element src:', actualSrc)
+                              console.log('📹 Expected base URL:', expectedBaseUrl)
+                              console.log('📹 Actual base URL:', actualBaseUrl)
+                              
+                              // If video element has wrong URL, force reload
+                              if (expectedBaseUrl && actualBaseUrl && expectedBaseUrl !== actualBaseUrl && lastProcessedUrl) {
+                                console.error('⚠️ CRITICAL: Video element loaded wrong URL!')
+                                console.error('⚠️ Expected:', expectedBaseUrl)
+                                console.error('⚠️ Actual:', actualBaseUrl)
+                                console.error('🔄 Forcing immediate reload...')
+                                // Force reload by incrementing videoKey
+                                setVideoKey(prev => prev + 1)
+                                return
+                              }
+                            }
+                          } catch (e) {
+                            console.log('ℹ️ Could not access ReactPlayer internal element:', e)
+                          }
+                          
                           console.log('✅ Video loaded successfully - NOT reverting to original')
                           // Verify URL matches what we expect
                           if (selectedMedia.url === originalVideoUrl && lastProcessedUrl) {
@@ -1144,14 +1219,27 @@ export default function DashboardPage() {
                 setSelectedMedia({ ...selectedMedia, url })
                 setLastProcessedUrl(url) // Track last processed URL
                 
-                // Update videoKey immediately to force ReactPlayer to remount with new URL
+                // Update cache-busting refs for new URL
+                const newBaseUrl = url.split('?')[0]
+                // Set timestamp immediately so URL computation uses it
+                cacheBustTimestampRef.current = Date.now()
+                // Will be set to baseUrl during next render in URL computation
+                lastUrlForCacheBustRef.current = null // Reset so URL computation detects the change
+                
+                // Small delay to ensure URL state is fully propagated before remounting
+                await new Promise(resolve => setTimeout(resolve, 100))
+                
+                // Update videoKey to force ReactPlayer to remount with new URL
                 // This must happen AFTER URL is set to ensure ReactPlayer gets the new URL
                 setVideoKey(newVideoKey)
+                
+                // Additional delay to ensure ReactPlayer fully remounts
+                await new Promise(resolve => setTimeout(resolve, 50))
                 
                 // Keep the flag set for a bit longer to prevent race conditions
                 setTimeout(() => {
                   isManualUpdateRef.current = false
-                }, 100)
+                }, 200)
                 
                 console.log('✅ Dashboard: State updated! Video key:', newVideoKey)
                 console.log('✅ Dashboard: New URL set:', url)
