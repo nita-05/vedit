@@ -12,29 +12,33 @@ const nextConfig = {
   // Webpack config to include FFmpeg binary in serverless functions
   webpack: (config, { isServer }) => {
     if (isServer) {
-      // Don't externalize ffmpeg-static - we need the binary in the bundle
-      config.externals = config.externals || []
-      
-      // Ensure binary files are included (not externalized)
-      // Note: externals can be functions or strings, filter only strings
-      if (Array.isArray(config.externals)) {
-        config.externals = config.externals.filter((external) => {
-          if (typeof external === 'function') {
-            // Keep functions as-is
-            return true
+      // Ensure ffmpeg-static is not externalized - we need it in the bundle
+      // Next.js by default externalizes node_modules, but we need ffmpeg-static
+      const originalExternals = config.externals
+      config.externals = [
+        // Keep original externals but filter out ffmpeg-static
+        ...(Array.isArray(originalExternals) 
+          ? originalExternals.filter((ext) => {
+              if (typeof ext === 'string') {
+                return !ext.includes('ffmpeg-static')
+              }
+              return true
+            })
+          : originalExternals || []
+        ),
+        // Explicitly internalize ffmpeg-static
+        ({ request }, callback) => {
+          if (request && request.includes('ffmpeg-static')) {
+            // Don't externalize - bundle it
+            return callback()
           }
-          if (typeof external === 'string') {
-            // Don't externalize ffmpeg-static
-            return !external.includes('ffmpeg-static')
+          // For other packages, use default externalization
+          if (typeof originalExternals === 'function') {
+            return originalExternals({ request }, callback)
           }
-          // Keep other types
-          return true
-        })
-      }
-      
-      // Add alias to help resolve ffmpeg-static
-      config.resolve = config.resolve || {}
-      config.resolve.alias = config.resolve.alias || {}
+          callback()
+        },
+      ]
     }
     return config
   },
