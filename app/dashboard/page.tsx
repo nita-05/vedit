@@ -719,7 +719,7 @@ export default function DashboardPage() {
                   {selectedMedia.type === 'video' ? (
                     <>
                       <ReactPlayer
-                        key={`video-player-${videoKey}-${selectedMedia.url?.substring(selectedMedia.url.length - 20)}`}
+                        key={`video-${videoKey}-${selectedMedia.url?.split('?')[0]?.substring(selectedMedia.url.length - 30)}`}
                         url={selectedMedia.url}
                         controls
                         width="100%"
@@ -729,17 +729,25 @@ export default function DashboardPage() {
                           file: {
                             attributes: {
                               controlsList: 'nodownload',
-                              preload: 'auto',
-                              // Force no cache
+                              preload: 'none', // Don't preload - force fresh load
+                              // Aggressive cache prevention
                               'data-cache': 'no',
+                              'data-no-cache': '1',
                               onError: (e: any) => {
                                 console.error('🎥 Video element error:', e)
                                 console.error('🎥 Current URL:', selectedMedia.url)
                                 // Don't revert - let user see the error
+                              },
+                              // Force video element to reload
+                              onLoadStart: () => {
+                                console.log('🔄 Video element load started:', selectedMedia.url)
                               }
                             },
-                            // Force reload
+                            // Force video format
                             forceVideo: true,
+                            // Disable caching
+                            forceHLS: false,
+                            forceDASH: false,
                           }
                         }}
                         onError={(e) => {
