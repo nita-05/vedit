@@ -719,7 +719,7 @@ export default function DashboardPage() {
                   {selectedMedia.type === 'video' ? (
                     <>
                       <ReactPlayer
-                        key={`video-${selectedMedia.url}-${videoKey}`}
+                        key={`video-player-${videoKey}-${selectedMedia.url?.substring(selectedMedia.url.length - 20)}`}
                         url={selectedMedia.url}
                         controls
                         width="100%"
