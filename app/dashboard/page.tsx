@@ -860,7 +860,17 @@ export default function DashboardPage() {
                           console.log('▶️ Video key:', videoKey)
                         }}
                         onProgress={(state) => setCurrentTime(state.playedSeconds)}
-                        onDuration={(dur) => setDuration(dur)}
+                        onDuration={(dur) => {
+                          // For processed videos, ignore ReactPlayer's duration and use original
+                          // ReactPlayer gets incomplete duration from Cloudinary streaming metadata
+                          const isOriginal = selectedMedia.url === originalVideoUrl
+                          if (!isOriginal && originalVideoDuration > 0) {
+                            console.log('⏱️ ReactPlayer reported duration:', dur, 'seconds, but using original:', originalVideoDuration, 'seconds')
+                            setDuration(originalVideoDuration)
+                          } else {
+                            setDuration(dur)
+                          }
+                        }}
                       />
                       {/* Undo button */}
                       {editHistory.length > 0 && (
