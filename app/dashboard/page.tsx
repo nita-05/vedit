@@ -921,7 +921,7 @@ export default function DashboardPage() {
             videoPublicId={selectedMedia?.publicId || ''}
             videoUrl={selectedMedia?.url}
             mediaType={selectedMedia?.type || 'video'}
-            onVideoUpdate={(url) => {
+            onVideoUpdate={async (url) => {
               console.log('🎬 Dashboard: onVideoUpdate called with URL:', url)
               console.log('🎬 Dashboard: Current selectedMedia:', selectedMedia)
               
@@ -983,10 +983,15 @@ export default function DashboardPage() {
                 console.log('🎬 Dashboard: Updating selectedMedia URL from:', selectedMedia.url)
                 console.log('🎬 Dashboard: To:', url)
                 
-                // Update state - this will trigger ReactPlayer to reload
-                // IMPORTANT: Update videoKey FIRST to force ReactPlayer to unmount old video
+                // CRITICAL: Update videoKey FIRST to force ReactPlayer to completely unmount
+                // This ensures the old video element is destroyed before new one is created
                 const newVideoKey = videoKey + 1
-                setVideoKey(newVideoKey) // Force ReactPlayer remount with new URL
+                console.log('🔄 Dashboard: Incrementing videoKey from', videoKey, 'to', newVideoKey)
+                setVideoKey(newVideoKey)
+                
+                // Small delay to ensure ReactPlayer unmounts before updating URL
+                // This prevents ReactPlayer from reusing cached video element
+                await new Promise(resolve => setTimeout(resolve, 50))
                 
                 // Then update the URL - ReactPlayer will remount with new key and new URL
                 setMediaItems(updated)
@@ -997,6 +1002,9 @@ export default function DashboardPage() {
                 console.log('✅ Dashboard: New URL set:', url)
                 console.log('✅ Dashboard: ReactPlayer will remount with key:', newVideoKey, 'and URL:', url)
                 console.log('✅ Dashboard: This will force ReactPlayer to load the NEW video, not cached original')
+                console.log('✅ Dashboard: URL verification - Original:', originalVideoUrl?.substring(0, 50))
+                console.log('✅ Dashboard: URL verification - New:', url.substring(0, 50))
+                console.log('✅ Dashboard: URLs are different:', url !== originalVideoUrl)
                 
                 // Show notification if video was actually processed
                 if (urlChanged && !isOriginal) {
