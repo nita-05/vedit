@@ -747,35 +747,59 @@ export class VideoProcessor {
         console.log(`ℹ️ Direct require failed: ${staticError?.message}`)
       }
       
-      // Strategy 2: Search in Vercel serverless paths
+      // Strategy 2: Search in Vercel serverless paths (CRITICAL: /var/task is where Vercel bundles functions)
       if (!foundFFmpeg) {
         const searchPaths = [
           '/var/task',
           '/var/task/node_modules',
+          '/var/task/node_modules/ffmpeg-static',
           '/var/task/.next/server',
+          '/var/task/.next/server/node_modules',
+          '/var/task/.next/server/node_modules/ffmpeg-static',
           process.cwd(),
           path.join(process.cwd(), 'node_modules'),
+          path.join(process.cwd(), 'node_modules', 'ffmpeg-static'),
         ]
         
+        console.log(`🔍 Searching in ${searchPaths.length} base paths...`)
         for (const basePath of searchPaths) {
-          if (!fs.existsSync(basePath)) continue
+          if (!fs.existsSync(basePath)) {
+            console.log(`  ❌ Path does not exist: ${basePath}`)
+            continue
+          }
           
+          console.log(`  ✅ Checking base path: ${basePath}`)
           const possiblePaths = [
+            path.join(basePath, 'ffmpeg'),
+            path.join(basePath, 'ffmpeg-static'),
             path.join(basePath, 'ffmpeg-static', 'ffmpeg'),
             path.join(basePath, 'ffmpeg-static', 'vendor', 'ffmpeg'),
             path.join(basePath, 'node_modules', 'ffmpeg-static', 'ffmpeg'),
             path.join(basePath, 'node_modules', 'ffmpeg-static', 'vendor', 'ffmpeg'),
+            path.join(basePath, 'node_modules', 'ffmpeg-static', 'bin', 'ffmpeg'),
           ]
           
           for (const possiblePath of possiblePaths) {
             if (fs.existsSync(possiblePath)) {
-              foundFFmpeg = possiblePath
-              console.log(`✅ Found in search path: ${possiblePath}`)
-              break
+              // Check if it's actually a file (not a directory)
+              const stats = fs.statSync(possiblePath)
+              if (stats.isFile()) {
+                foundFFmpeg = possiblePath
+                console.log(`✅ Found FFmpeg binary at: ${possiblePath}`)
+                console.log(`📦 File size: ${(stats.size / 1024 / 1024).toFixed(2)} MB`)
+                break
+              } else {
+                console.log(`  ⚠️ Path exists but is a directory: ${possiblePath}`)
+              }
             }
           }
           
           if (foundFFmpeg) break
+        }
+        
+        if (!foundFFmpeg) {
+          console.warn(`⚠️ FFmpeg not found in any search path`)
+          console.warn(`⚠️ Checked ${searchPaths.length} base paths`)
         }
       }
       
