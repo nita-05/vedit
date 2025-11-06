@@ -78,14 +78,14 @@ export class CloudinaryTransformProcessor {
     }
 
     // Build Cloudinary URL - always use HTTPS
-    // Use proper Cloudinary overlay syntax for text
-    // Escape special characters for Cloudinary text overlay
-    const overlayText = text.replace(/:/g, '\\:').replace(/,/g, '\\,').replace(/'/g, "\\'")
+    // Use simplified Cloudinary text overlay format
+    // Escape text for URL safety
+    const escapedText = encodeURIComponent(text)
     
-    // Build transformation object with correct Cloudinary syntax
+    // Build transformation using Cloudinary SDK format
     const transformation: any = {
       overlay: {
-        text: overlayText,
+        text: text, // Use unescaped text for SDK
         font_family: 'Arial',
         font_size: size,
         font_weight: style === 'bold' ? 'bold' : 'normal',
@@ -97,18 +97,16 @@ export class CloudinaryTransformProcessor {
     const gravityValue = gravity.replace(/^g_/, '')
     transformation.gravity = gravityValue
     
-    // Add Y offset based on position
+    // Add Y offset based on position (Cloudinary uses positive for top, negative for bottom)
     if (position.includes('top')) {
       transformation.y = 20
     } else if (position.includes('bottom')) {
       transformation.y = -20
     }
     
-    // Add background if specified (use overlay background, not transformation background)
-    if (backgroundColor && backgroundColor !== 'transparent') {
-      const bgColor = this.parseColor(backgroundColor)
-      transformation.overlay.background = bgColor
-    }
+    // Note: Background color for text overlay needs to be handled differently
+    // Cloudinary doesn't support background directly in text overlay
+    // If background is needed, we'd need a different approach
     
     const url = cloudinary.url(publicId, {
       resource_type: 'video',
@@ -121,6 +119,8 @@ export class CloudinaryTransformProcessor {
     const finalUrl = url.includes('?') 
       ? `${url}&_t=${timestamp}` 
       : `${url}?_t=${timestamp}`
+    
+    console.log(`☁️ Generated Cloudinary text overlay URL: ${finalUrl.substring(0, 100)}...`)
     
     return finalUrl
   }
