@@ -787,6 +787,16 @@ export default function DashboardPage() {
                                     } : null,
                                   }
                                   console.error('🎥 Error details:', errorInfo)
+                                  
+                                  // If it's a network/CORS error, try to reload after a delay
+                                  const errorCode = e?.target?.error?.code
+                                  if (errorCode === 4 || errorCode === 3) { // MEDIA_ERR_SRC_NOT_SUPPORTED or MEDIA_ERR_NETWORK
+                                    console.log('🔄 Network/CORS error detected, will retry loading...')
+                                    setTimeout(() => {
+                                      // Force reload by incrementing videoKey
+                                      setVideoKey(prev => prev + 1)
+                                    }, 1000)
+                                  }
                                 } catch (logError) {
                                   console.error('🎥 Error (could not serialize):', e?.message || String(e))
                                 }
@@ -857,8 +867,15 @@ export default function DashboardPage() {
                           console.error('🎥 ReactPlayer error:', e)
                           console.error('🎥 Failed URL:', selectedMedia.url)
                           console.error('🎥 Is this original?', selectedMedia.url === originalVideoUrl)
-                          // Show error but don't revert to original
-                          // The URL is set, just might need time to process
+                          
+                          // Try to recover from errors by reloading
+                          // Only retry if it's not the original video (processed videos might need time)
+                          if (selectedMedia.url !== originalVideoUrl) {
+                            console.log('🔄 Processed video error, will retry in 2 seconds...')
+                            setTimeout(() => {
+                              setVideoKey(prev => prev + 1)
+                            }, 2000)
+                          }
                         }}
                         onReady={() => {
                           console.log('🎥 ReactPlayer ready with URL:', selectedMedia.url)

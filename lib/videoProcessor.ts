@@ -2280,8 +2280,51 @@ export class VideoProcessor {
     startTime: number,
     endTime: number
   ): ffmpeg.FfmpegCommand {
-    // This would require complex filtering or multiple input handling
-    // Simplified version
+    // Remove a segment from video by splitting into two parts and concatenating
+    // Part 1: 0 to startTime
+    // Part 2: endTime to end (duration will be handled automatically)
+    
+    // Validate times
+    if (startTime < 0) startTime = 0
+    if (endTime <= startTime) {
+      console.warn(`⚠️ Invalid time range: startTime (${startTime}) >= endTime (${endTime}), skipping removal`)
+      return command
+    }
+    
+    // Use complex filter to:
+    // 1. Trim first part: [0:v]trim=0:startTime,setpts=PTS-STARTPTS[v1]; [0:a]atrim=0:startTime,asetpts=PTS-STARTPTS[a1]
+    // 2. Trim second part: [0:v]trim=endTime,setpts=PTS-STARTPTS[v2]; [0:a]atrim=endTime,asetpts=PTS-STARTPTS[a2]
+    // 3. Concat both parts: [v1][a1][v2][a2]concat=n=2:v=1:a=1[outv][outa]
+    
+    // Build filter complex based on startTime
+    // If startTime is 0, we're removing from the beginning, so only keep part after endTime
+    // Otherwise, keep part before startTime and part after endTime
+    
+    let filterComplex: string
+    
+    if (startTime === 0) {
+      // Removing from start: only keep part after endTime
+      filterComplex = `[0:v]trim=${endTime},setpts=PTS-STARTPTS[outv];[0:a]atrim=${endTime},asetpts=PTS-STARTPTS[outa]`
+    } else {
+      // Removing middle segment: keep part before startTime and part after endTime
+      filterComplex = [
+        // First segment: 0 to startTime
+        `[0:v]trim=0:${startTime},setpts=PTS-STARTPTS[v1];[0:a]atrim=0:${startTime},asetpts=PTS-STARTPTS[a1]`,
+        // Second segment: endTime to end
+        `[0:v]trim=${endTime},setpts=PTS-STARTPTS[v2];[0:a]atrim=${endTime},asetpts=PTS-STARTPTS[a2]`,
+        // Concatenate both segments
+        `[v1][a1][v2][a2]concat=n=2:v=1:a=1[outv][outa]`
+      ].join('; ')
+    }
+    
+    command
+      .complexFilter(filterComplex)
+      .outputOptions([
+        '-map', '[outv]',
+        '-map', '[outa]'
+      ])
+    
+    console.log(`✂️ Removing segment from ${startTime}s to ${endTime}s using filter_complex`)
     return command
   }
 
