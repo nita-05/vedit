@@ -89,6 +89,56 @@ export default function DashboardPage() {
   const isManualUpdateRef = useRef<boolean>(false)
   const lastUrlForCacheBustRef = useRef<string | null>(null)
   const cacheBustTimestampRef = useRef<number>(0)
+  const videoElementRef = useRef<HTMLVideoElement | null>(null)
+  
+  // AGGRESSIVE: Force video element to reload when URL changes
+  useEffect(() => {
+    if (!selectedMedia || selectedMedia.type !== 'video' || !videoElementRef.current) return
+    
+    const video = videoElementRef.current
+    const expectedBaseUrl = selectedMedia.url?.split('?')[0]
+    const actualSrc = video.src || video.currentSrc
+    const actualBaseUrl = actualSrc?.split('?')[0]
+    
+    // If video element has wrong URL or is showing cached content, force reload
+    if (expectedBaseUrl && actualBaseUrl && expectedBaseUrl !== actualBaseUrl) {
+      console.log('🔄 useEffect: Video URL mismatch detected, forcing reload...')
+      console.log('🔄 Expected:', expectedBaseUrl)
+      console.log('🔄 Actual:', actualBaseUrl)
+      
+      // Force reload by clearing and resetting
+      setTimeout(() => {
+        if (videoElementRef.current) {
+          try {
+            const currentTime = videoElementRef.current.currentTime
+            videoElementRef.current.pause()
+            videoElementRef.current.src = selectedMedia.url
+            videoElementRef.current.load()
+            // Try to restore playback position if video was playing
+            if (currentTime > 0) {
+              videoElementRef.current.currentTime = currentTime
+            }
+            console.log('✅ useEffect: Video element reloaded with correct URL')
+          } catch (e) {
+            console.error('❌ useEffect: Error reloading video:', e)
+          }
+        }
+      }, 200)
+    } else if (expectedBaseUrl && actualBaseUrl && expectedBaseUrl === actualBaseUrl && selectedMedia.url !== originalVideoUrl) {
+      // URL is correct but might be showing cached frame - force a reload
+      console.log('🔄 useEffect: Forcing video reload to clear cached frame...')
+      setTimeout(() => {
+        if (videoElementRef.current) {
+          try {
+            videoElementRef.current.load()
+            console.log('✅ useEffect: Video reloaded to clear cache')
+          } catch (e) {
+            console.log('ℹ️ useEffect: Could not reload video:', e)
+          }
+        }
+      }, 300)
+    }
+  }, [selectedMedia?.url, originalVideoUrl, selectedMedia?.type])
   
   useEffect(() => {
     // Skip if this is a manual update (from onVideoUpdate)
@@ -836,6 +886,7 @@ export default function DashboardPage() {
                               },
                               onLoadedMetadata: (e: any) => {
                                 const video = e?.target
+                                videoElementRef.current = video // Store reference
                                 if (video && video.duration) {
                                   const newDuration = video.duration
                                   const isOriginal = selectedMedia.url === originalVideoUrl
@@ -864,6 +915,17 @@ export default function DashboardPage() {
                                       setVideoKey(prev => prev + 1)
                                     }, 100)
                                     return
+                                  }
+                                  
+                                  // AGGRESSIVE: Force video to reload if it's a processed video
+                                  // Sometimes browser shows cached frame even with correct src
+                                  if (!isOriginal && lastProcessedUrl && videoSrc) {
+                                    const processedBaseUrl = lastProcessedUrl.split('?')[0]
+                                    if (actualBaseUrl === processedBaseUrl) {
+                                      // URL is correct, but force a reload to clear any cached frame
+                                      console.log('🔄 Forcing video reload to clear cached frame...')
+                                      video.load() // Force reload
+                                    }
                                   }
                                   
                                   // Store original video duration
@@ -1006,9 +1068,29 @@ export default function DashboardPage() {
                     </>
                   ) : (
                     <img
-                      src={selectedMedia.url}
+                      key={`image-${selectedMedia.url ? btoa(selectedMedia.url.split('?')[0]).slice(0, 20) : ''}-${videoKey}`}
+                      src={(() => {
+                        if (!selectedMedia.url) return ''
+                        // Add cache-busting for images too
+                        const baseUrl = selectedMedia.url.split('?')[0]
+                        const separator = selectedMedia.url.includes('?') ? '&' : '?'
+                        const existingParams = selectedMedia.url.includes('?') ? selectedMedia.url.split('?')[1] : ''
+                        const paramsWithoutCache = existingParams.split('&').filter(p => !p.startsWith('_cb=') && !p.startsWith('_t=')).join('&')
+                        const timestamp = cacheBustTimestampRef.current || Date.now()
+                        const cacheBust = `_cb=${videoKey}&_t=${timestamp}`
+                        const newParams = paramsWithoutCache ? `${paramsWithoutCache}&${cacheBust}` : cacheBust
+                        return `${baseUrl}?${newParams}`
+                      })()}
                       alt={selectedMedia.name}
                       className="w-full h-auto rounded-xl"
+                      onError={(e) => {
+                        console.error('🖼️ Image load error:', selectedMedia.url)
+                        setImageError(true)
+                      }}
+                      onLoad={() => {
+                        console.log('✅ Image loaded successfully:', selectedMedia.url)
+                        setImageError(false)
+                      }}
                     />
                   )}
                 </div>
@@ -1227,14 +1309,26 @@ export default function DashboardPage() {
                 lastUrlForCacheBustRef.current = null // Reset so URL computation detects the change
                 
                 // Small delay to ensure URL state is fully propagated before remounting
-                await new Promise(resolve => setTimeout(resolve, 100))
+                await new Promise(resolve => setTimeout(resolve, 150))
+                
+                // AGGRESSIVE: Force clear any existing video element before remounting
+                if (videoElementRef.current) {
+                  try {
+                    videoElementRef.current.pause()
+                    videoElementRef.current.src = ''
+                    videoElementRef.current.load()
+                    console.log('🧹 Cleared existing video element before remount')
+                  } catch (e) {
+                    console.log('ℹ️ Could not clear video element:', e)
+                  }
+                }
                 
                 // Update videoKey to force ReactPlayer to remount with new URL
                 // This must happen AFTER URL is set to ensure ReactPlayer gets the new URL
                 setVideoKey(newVideoKey)
                 
                 // Additional delay to ensure ReactPlayer fully remounts
-                await new Promise(resolve => setTimeout(resolve, 50))
+                await new Promise(resolve => setTimeout(resolve, 100))
                 
                 // Keep the flag set for a bit longer to prevent race conditions
                 setTimeout(() => {
