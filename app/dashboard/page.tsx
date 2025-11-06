@@ -729,18 +729,25 @@ export default function DashboardPage() {
                           file: {
                             attributes: {
                               controlsList: 'nodownload',
-                              preload: 'none', // Don't preload - force fresh load
+                              preload: 'metadata', // Load metadata but not full video
                               // Aggressive cache prevention
                               'data-cache': 'no',
                               'data-no-cache': '1',
                               onError: (e: any) => {
                                 console.error('🎥 Video element error:', e)
                                 console.error('🎥 Current URL:', selectedMedia.url)
+                                console.error('🎥 Error details:', JSON.stringify(e, null, 2))
                                 // Don't revert - let user see the error
                               },
                               // Force video element to reload
                               onLoadStart: () => {
                                 console.log('🔄 Video element load started:', selectedMedia.url)
+                              },
+                              onLoadedMetadata: () => {
+                                console.log('✅ Video metadata loaded:', selectedMedia.url)
+                              },
+                              onCanPlay: () => {
+                                console.log('✅ Video can play:', selectedMedia.url)
                               }
                             },
                             // Force video format
@@ -748,6 +755,11 @@ export default function DashboardPage() {
                             // Disable caching
                             forceHLS: false,
                             forceDASH: false,
+                            // Ensure proper video handling
+                            html5: {
+                              hlsOptions: {},
+                              dashOptions: {},
+                            }
                           }
                         }}
                         onError={(e) => {

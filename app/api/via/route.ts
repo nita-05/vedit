@@ -1088,7 +1088,13 @@ async function processWithCloudinaryFallback(
           resource_type: resourceType,
           secure: true,
           transformation: [{ effect: 'grayscale' }],
-          fetch_format: resourceType === 'video' ? 'auto' : undefined,
+          // Ensure proper video format for streaming
+          ...(resourceType === 'video' ? { 
+            fetch_format: 'auto',
+            quality: 'auto',
+            // Force MP4 format for better compatibility
+            format: 'mp4'
+          } : {}),
         })
         // Remove existing query params and add fresh cache-busting
         const cleanUrl = filterUrl.split('?')[0]

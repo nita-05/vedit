@@ -167,6 +167,11 @@ export class CloudinaryTransformProcessor {
       resource_type: resourceType,
       secure: true, // Force HTTPS to avoid mixed content issues
       transformation: transformations.length > 0 ? transformations : [],
+      // Ensure video format for streaming
+      ...(resourceType === 'video' ? { 
+        fetch_format: 'auto',
+        quality: 'auto'
+      } : {}),
     })
     
     // Add cache-busting timestamp to force browser refresh
