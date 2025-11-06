@@ -1010,48 +1010,70 @@ export class VideoProcessor {
 
   private async checkFFmpegAvailability(): Promise<void> {
     return new Promise((resolve, reject) => {
-      // On Vercel/Linux, be more lenient - assume FFmpeg is available and let it fail during actual use if not
+      // On Vercel/Linux, use the same aggressive search as ensureFFmpegPath
       if (isVercelOrLinux()) {
-        console.log('ℹ️ Vercel/Linux detected - using lenient FFmpeg check')
-        // Try a quick check, but don't fail if it doesn't work
+        console.log('🔍 Vercel/Linux detected - performing aggressive FFmpeg search...')
+        
+        // First, ensure FFmpeg path is set (this runs the full search)
+        this.ensureFFmpegPath()
+        
+        // Now verify the path works
         try {
-          // Quick version check
-          try {
-            const versionOutput = execSync('ffmpeg -version', { 
-              stdio: 'pipe', 
-              timeout: 2000,
-              encoding: 'utf8'
-            })
-            if (versionOutput && versionOutput.includes('ffmpeg version')) {
-              const versionMatch = versionOutput.match(/ffmpeg version (\S+)/)
-              console.log(`✅ FFmpeg is available (verified)${versionMatch ? ` - version ${versionMatch[1]}` : ''}`)
-              resolve()
-              return
-            }
-          } catch (versionError) {
-            console.log('ℹ️ FFmpeg version check failed, but continuing (will try during actual use)')
-          }
+          const ffmpegModule = ffmpeg as any
+          const currentPath = ffmpegModule.ffmpegPath
           
-          // Try to find FFmpeg in common paths
-          const commonPaths = ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg', '/bin/ffmpeg']
-          for (const checkPath of commonPaths) {
-            if (fs.existsSync(checkPath)) {
-              ffmpeg.setFfmpegPath(checkPath)
-              console.log(`✅ FFmpeg found at: ${checkPath}`)
-              resolve()
-              return
+          if (currentPath) {
+            // Verify it works
+            try {
+              const versionOutput = execSync(`${currentPath} -version`, { 
+                stdio: 'pipe', 
+                timeout: 5000,
+                encoding: 'utf8'
+              })
+              if (versionOutput && versionOutput.includes('ffmpeg version')) {
+                const versionMatch = versionOutput.match(/ffmpeg version (\S+)/)
+                console.log(`✅ FFmpeg is available and verified: ${currentPath}${versionMatch ? ` - version ${versionMatch[1]}` : ''}`)
+                resolve()
+                return
+              }
+            } catch (versionError: any) {
+              console.error(`❌ FFmpeg path set but not working: ${currentPath}`)
+              console.error(`❌ Error: ${versionError?.message}`)
             }
           }
           
-          // On Vercel, assume FFmpeg is available in PATH even if check fails
-          console.log('ℹ️ FFmpeg check inconclusive on Vercel - proceeding (will fail during actual use if not available)')
-          resolve()
-          return
+          // If path is set but doesn't work, try to find it again
+          console.log('🔄 FFmpeg path not working, re-searching...')
+          this.ensureFFmpegPath()
+          
+          // Check again after re-search
+          const retryModule = ffmpeg as any
+          const retryPath = retryModule.ffmpegPath
+          
+          if (retryPath) {
+            try {
+              execSync(`${retryPath} -version`, { stdio: 'pipe', timeout: 5000 })
+              console.log(`✅ FFmpeg found and verified after re-search: ${retryPath}`)
+              resolve()
+              return
+            } catch {
+              // Still not working
+            }
+          }
+          
+          // If we get here, FFmpeg wasn't found
+          const searchedPaths = [
+            '/tmp/ffmpeg',
+            '/var/task/node_modules/ffmpeg-static/ffmpeg',
+            process.cwd() + '/node_modules/ffmpeg-static/ffmpeg',
+            '/usr/bin/ffmpeg',
+            '/usr/local/bin/ffmpeg',
+          ].filter(Boolean).join(', ')
+          
+          reject(new Error(`FFmpeg not found. The ffmpeg-static binary is not accessible on Vercel. Paths searched: ${searchedPaths}. Please check server logs for more details.`))
         } catch (error: any) {
-          // On Vercel, be lenient - just log and continue
-          console.warn('⚠️ FFmpeg check error on Vercel, but continuing:', error?.message)
-          resolve()
-          return
+          console.error('❌ FFmpeg check error:', error?.message)
+          reject(error)
         }
       }
       
