@@ -63,24 +63,9 @@ export class CloudinaryTransformProcessor {
     // Parse color
     const color = this.parseColor(fontColor)
 
-    // Build transformation string
-    let transformations: string[] = []
-
-    // Add text overlay
-    transformations.push(`l_text:${size}_${style}:${escapedText}`)
-    transformations.push(`co_${color}`)
-    transformations.push(gravity)
-
-    // Add background if specified
-    if (backgroundColor && backgroundColor !== 'transparent') {
-      const bgColor = this.parseColor(backgroundColor)
-      transformations.push(`bo_3px_solid_${bgColor}`)
-    }
-
     // Build Cloudinary URL - always use HTTPS
     // Use simplified Cloudinary text overlay format
-    // Escape text for URL safety
-    const escapedText = encodeURIComponent(text)
+    // Note: We don't need to escape text for SDK - it handles it automatically
     
     // Build transformation using Cloudinary SDK format
     const transformation: any = {
