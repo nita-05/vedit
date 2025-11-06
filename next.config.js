@@ -12,13 +12,22 @@ const nextConfig = {
   // Webpack config to include FFmpeg binary in serverless functions
   webpack: (config, { isServer }) => {
     if (isServer) {
-      // Don't externalize @ffmpeg-installer packages - we need them in the bundle
-      // The binary files need to be accessible at runtime
+      // Don't externalize ffmpeg-static - we need the binary in the bundle
       config.externals = config.externals || []
       
-      // Ensure FFmpeg binary files are included as assets
-      config.module = config.module || {}
-      config.module.rules = config.module.rules || []
+      // Ensure binary files are included (not externalized)
+      config.externals = config.externals.filter((external: any) => {
+        if (typeof external === 'function') {
+          // Can't filter functions easily, but they should handle it
+          return true
+        }
+        // Don't externalize ffmpeg-static
+        return !external.includes('ffmpeg-static')
+      })
+      
+      // Add alias to help resolve ffmpeg-static
+      config.resolve = config.resolve || {}
+      config.resolve.alias = config.resolve.alias || {}
     }
     return config
   },

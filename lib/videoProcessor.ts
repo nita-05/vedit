@@ -237,63 +237,88 @@ function isVercelOrLinuxEnv(): boolean {
 let ffmpegPathSet = false
 
 // On Vercel/Linux, try to find and copy FFmpeg to /tmp early
+// Enhanced Vercel FFmpeg initialization - runs at module load
 if (process.env.VERCEL === '1' || process.env.VERCEL_ENV !== undefined) {
   try {
     console.log('🔍 Early FFmpeg initialization for Vercel...')
-    const installerPath = getFFmpegInstallerPath()
-    console.log(`📦 Installer path found: ${installerPath || 'null'}`)
-    if (installerPath && fs.existsSync(installerPath)) {
+    
+    // Try ffmpeg-static first (most reliable for Vercel)
+    let ffmpegPath: string | null = null
+    
+    try {
+      const ffmpegStatic = require('ffmpeg-static')
+      const staticPath = typeof ffmpegStatic === 'string' ? ffmpegStatic : ffmpegStatic.path
+      
+      if (staticPath && fs.existsSync(staticPath)) {
+        ffmpegPath = staticPath
+        console.log(`✅ Found ffmpeg-static at: ${staticPath}`)
+      } else {
+        // Try to find in node_modules
+        try {
+          const staticModuleDir = path.dirname(require.resolve('ffmpeg-static'))
+          const possiblePaths = [
+            path.join(staticModuleDir, 'ffmpeg'),
+            path.join(staticModuleDir, 'vendor', 'ffmpeg'),
+            path.join(staticModuleDir, 'bin', 'ffmpeg'),
+          ]
+          for (const possiblePath of possiblePaths) {
+            if (fs.existsSync(possiblePath)) {
+              ffmpegPath = possiblePath
+              console.log(`✅ Found ffmpeg-static in module: ${possiblePath}`)
+              break
+            }
+          }
+        } catch (resolveError) {
+          console.log(`ℹ️ Could not resolve ffmpeg-static module: ${resolveError}`)
+        }
+      }
+    } catch (staticError) {
+      console.log(`ℹ️ ffmpeg-static not available: ${staticError}`)
+    }
+    
+    // If found, copy to /tmp and use it
+    if (ffmpegPath && fs.existsSync(ffmpegPath)) {
       const tmpFFmpegPath = '/tmp/ffmpeg'
       try {
-        // Copy to /tmp if not already there or if source is newer
-        let needsCopy = true
-        if (fs.existsSync(tmpFFmpegPath)) {
-          try {
-            const tmpStats = fs.statSync(tmpFFmpegPath)
-            const srcStats = fs.statSync(installerPath)
-            // Copy if source is newer or sizes don't match
-            if (tmpStats.size === srcStats.size && tmpStats.mtime >= srcStats.mtime) {
-              needsCopy = false
-            }
-          } catch {
-            // If we can't compare, copy anyway
-          }
-        }
+        // Always copy to /tmp on Vercel (read-only filesystem)
+        console.log(`📋 Copying FFmpeg from ${ffmpegPath} to ${tmpFFmpegPath}...`)
+        const binaryData = fs.readFileSync(ffmpegPath)
+        fs.writeFileSync(tmpFFmpegPath, binaryData, { mode: 0o755 })
         
-        if (needsCopy) {
-          console.log(`📋 Early copy: Copying FFmpeg from ${installerPath} to ${tmpFFmpegPath}...`)
-          const binaryData = fs.readFileSync(installerPath)
-          fs.writeFileSync(tmpFFmpegPath, binaryData)
+        // Make executable
+        try {
           execSync(`chmod +x "${tmpFFmpegPath}"`, { stdio: 'ignore' })
-          console.log(`✅ Early copy: FFmpeg copied to ${tmpFFmpegPath}`)
-        } else {
-          console.log(`ℹ️ FFmpeg already exists in /tmp, skipping copy`)
+        } catch (chmodError) {
+          // Ignore - might already be executable via writeFile mode
         }
         
         // Verify it works
-        execSync(`${tmpFFmpegPath} -version`, { stdio: 'pipe', timeout: 3000 })
-        ffmpeg.setFfmpegPath(tmpFFmpegPath)
-        ffmpegPathSet = true
-        console.log(`✅ Early init: Using FFmpeg from /tmp: ${tmpFFmpegPath}`)
-      } catch (error: any) {
-        console.log(`ℹ️ Early copy/verification failed, will retry at runtime: ${error?.message}`)
-        // Try using the installer path directly as fallback
-        try {
-          execSync(`chmod +x "${installerPath}"`, { stdio: 'ignore' })
-          execSync(`${installerPath} -version`, { stdio: 'pipe', timeout: 3000 })
-          ffmpeg.setFfmpegPath(installerPath)
+        const versionOutput = execSync(`${tmpFFmpegPath} -version`, { 
+          stdio: 'pipe', 
+          timeout: 3000,
+          encoding: 'utf8'
+        })
+        
+        if (versionOutput && versionOutput.includes('ffmpeg version')) {
+          ffmpeg.setFfmpegPath(tmpFFmpegPath)
           ffmpegPathSet = true
-          console.log(`✅ Early init: Using FFmpeg directly from installer: ${installerPath}`)
-        } catch (directError: any) {
-          console.log(`ℹ️ Direct path also failed: ${directError?.message}`)
+          console.log(`✅ FFmpeg initialized successfully from /tmp: ${tmpFFmpegPath}`)
+          console.log(`✅ FFmpeg version: ${versionOutput.split('\n')[0]}`)
+        } else {
+          throw new Error('FFmpeg version check failed')
         }
+      } catch (copyError: any) {
+        console.error(`❌ Failed to copy/verify FFmpeg: ${copyError?.message}`)
+        console.error(`❌ Stack: ${copyError?.stack}`)
+        // Will retry at runtime
       }
     } else {
-      console.log(`⚠️ Installer path not found or doesn't exist, will retry at runtime`)
+      console.log(`⚠️ FFmpeg binary not found in ffmpeg-static, will search at runtime`)
     }
   } catch (error: any) {
-    console.log(`ℹ️ Early FFmpeg initialization failed: ${error?.message}`)
-    console.log(`ℹ️ Error stack: ${error?.stack}`)
+    console.error(`❌ Early FFmpeg initialization failed: ${error?.message}`)
+    console.error(`❌ Stack: ${error?.stack}`)
+    // Continue - will retry at runtime
   }
 }
 
@@ -625,64 +650,104 @@ export class VideoProcessor {
     }
 
     // On Vercel/Linux, FFmpeg is NOT available system-wide
-    // We need to use the bundled binary from @ffmpeg-installer/ffmpeg
+    // We need to use the bundled binary from ffmpeg-static
     if (isVercelOrLinux()) {
-      // Try multiple approaches to find and set FFmpeg path
-      const installerPath = getFFmpegInstallerPath()
+      // PRIORITY: Try ffmpeg-static first (most reliable for Vercel)
+      let foundFFmpeg: string | null = null
       
-      if (installerPath && fs.existsSync(installerPath)) {
-        // Approach 1: Try to use the binary directly (without copying)
-        try {
-          // Make sure it's executable first
+      try {
+        const ffmpegStatic = require('ffmpeg-static')
+        const staticPath = typeof ffmpegStatic === 'string' ? ffmpegStatic : ffmpegStatic.path
+        
+        if (staticPath && fs.existsSync(staticPath)) {
+          foundFFmpeg = staticPath
+          console.log(`✅ Found ffmpeg-static binary: ${staticPath}`)
+        } else {
+          // Try to find in node_modules structure
           try {
-            execSync(`chmod +x "${installerPath}"`, { stdio: 'ignore' })
+            const staticModuleDir = path.dirname(require.resolve('ffmpeg-static'))
+            const possiblePaths = [
+              path.join(staticModuleDir, 'ffmpeg'),
+              path.join(staticModuleDir, 'vendor', 'ffmpeg'),
+              path.join(staticModuleDir, 'bin', 'ffmpeg'),
+              path.join(staticModuleDir, '..', 'ffmpeg'),
+            ]
+            for (const possiblePath of possiblePaths) {
+              if (fs.existsSync(possiblePath)) {
+                foundFFmpeg = possiblePath
+                console.log(`✅ Found ffmpeg-static in module: ${possiblePath}`)
+                break
+              }
+            }
+          } catch (resolveError) {
+            console.log(`ℹ️ Could not resolve ffmpeg-static: ${resolveError}`)
+          }
+        }
+      } catch (staticError) {
+        console.log(`ℹ️ ffmpeg-static require failed: ${staticError}`)
+      }
+      
+      // If found, copy to /tmp and use it
+      if (foundFFmpeg && fs.existsSync(foundFFmpeg)) {
+        const tmpFFmpegPath = '/tmp/ffmpeg'
+        try {
+          // Always copy to /tmp on Vercel (filesystem is read-only except /tmp)
+          console.log(`📋 Copying FFmpeg to /tmp for Vercel...`)
+          const binaryData = fs.readFileSync(foundFFmpeg)
+          fs.writeFileSync(tmpFFmpegPath, binaryData, { mode: 0o755 })
+          
+          // Make executable
+          try {
+            execSync(`chmod +x "${tmpFFmpegPath}"`, { stdio: 'ignore' })
           } catch {
-            // Ignore chmod errors - might already be executable
+            // Ignore - writeFile with mode should be enough
           }
           
           // Verify it works
-          execSync(`${installerPath} -version`, { stdio: 'pipe', timeout: 3000 })
-          ffmpeg.setFfmpegPath(installerPath)
-          console.log(`✅ Using FFmpeg directly from node_modules: ${installerPath}`)
+          const versionOutput = execSync(`${tmpFFmpegPath} -version`, { 
+            stdio: 'pipe', 
+            timeout: 3000,
+            encoding: 'utf8'
+          })
+          
+          if (versionOutput && versionOutput.includes('ffmpeg version')) {
+            ffmpeg.setFfmpegPath(tmpFFmpegPath)
+            console.log(`✅ FFmpeg ready at /tmp: ${tmpFFmpegPath}`)
+            return
+          } else {
+            throw new Error('FFmpeg version verification failed')
+          }
+        } catch (copyError: any) {
+          console.error(`❌ Failed to copy/verify FFmpeg: ${copyError?.message}`)
+          // Try direct path as fallback
+          try {
+            execSync(`chmod +x "${foundFFmpeg}"`, { stdio: 'ignore' })
+            execSync(`${foundFFmpeg} -version`, { stdio: 'pipe', timeout: 3000 })
+            ffmpeg.setFfmpegPath(foundFFmpeg)
+            console.log(`✅ Using FFmpeg directly: ${foundFFmpeg}`)
+            return
+          } catch (directError) {
+            console.error(`❌ Direct path also failed: ${directError}`)
+          }
+        }
+      }
+      
+      // Fallback: Try getFFmpegInstallerPath (for @ffmpeg-installer/ffmpeg)
+      const installerPath = getFFmpegInstallerPath()
+      
+      if (installerPath && fs.existsSync(installerPath)) {
+        // Copy to /tmp
+        const tmpFFmpegPath = '/tmp/ffmpeg'
+        try {
+          const binaryData = fs.readFileSync(installerPath)
+          fs.writeFileSync(tmpFFmpegPath, binaryData, { mode: 0o755 })
+          execSync(`chmod +x "${tmpFFmpegPath}"`, { stdio: 'ignore' })
+          execSync(`${tmpFFmpegPath} -version`, { stdio: 'pipe', timeout: 3000 })
+          ffmpeg.setFfmpegPath(tmpFFmpegPath)
+          console.log(`✅ Using FFmpeg from installer (copied to /tmp): ${tmpFFmpegPath}`)
           return
         } catch (error: any) {
-          console.log(`ℹ️ Direct path failed, trying /tmp copy: ${error?.message}`)
-          
-          // Approach 2: Copy to /tmp to ensure it's accessible
-          const tmpFFmpegPath = '/tmp/ffmpeg'
-          try {
-            // Copy binary to /tmp if not already there or if it's stale
-            let needsCopy = true
-            if (fs.existsSync(tmpFFmpegPath)) {
-              // Check if it's the same file
-              try {
-                const tmpStats = fs.statSync(tmpFFmpegPath)
-                const srcStats = fs.statSync(installerPath)
-                if (tmpStats.size === srcStats.size && tmpStats.mtime >= srcStats.mtime) {
-                  needsCopy = false
-                }
-              } catch {
-                // If we can't compare, copy anyway
-              }
-            }
-            
-            if (needsCopy) {
-              const binaryData = fs.readFileSync(installerPath)
-              fs.writeFileSync(tmpFFmpegPath, binaryData)
-              // Make executable
-              execSync(`chmod +x "${tmpFFmpegPath}"`, { stdio: 'ignore' })
-              console.log(`✅ Copied FFmpeg binary to ${tmpFFmpegPath}`)
-            }
-            
-            // Verify it works
-            execSync(`${tmpFFmpegPath} -version`, { stdio: 'pipe', timeout: 3000 })
-            ffmpeg.setFfmpegPath(tmpFFmpegPath)
-            console.log(`✅ Using FFmpeg from /tmp: ${tmpFFmpegPath}`)
-            return
-          } catch (tmpError: any) {
-            console.error(`❌ Failed to use FFmpeg from /tmp: ${tmpError?.message}`)
-            // Continue to try other approaches
-          }
+          console.log(`ℹ️ Installer path copy failed: ${error?.message}`)
         }
       }
       
