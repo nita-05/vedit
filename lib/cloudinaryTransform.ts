@@ -78,38 +78,51 @@ export class CloudinaryTransformProcessor {
     }
 
     // Build Cloudinary URL - always use HTTPS
+    // Use proper Cloudinary overlay syntax for text
+    // Escape special characters for Cloudinary text overlay
+    const overlayText = text.replace(/:/g, '\\:').replace(/,/g, '\\,').replace(/'/g, "\\'")
+    
+    // Build transformation object with correct Cloudinary syntax
+    const transformation: any = {
+      overlay: {
+        text: overlayText,
+        font_family: 'Arial',
+        font_size: size,
+        font_weight: style === 'bold' ? 'bold' : 'normal',
+      },
+      color: color,
+    }
+    
+    // Set gravity (remove 'g_' prefix if present)
+    const gravityValue = gravity.replace(/^g_/, '')
+    transformation.gravity = gravityValue
+    
+    // Add Y offset based on position
+    if (position.includes('top')) {
+      transformation.y = 20
+    } else if (position.includes('bottom')) {
+      transformation.y = -20
+    }
+    
+    // Add background if specified (use overlay background, not transformation background)
+    if (backgroundColor && backgroundColor !== 'transparent') {
+      const bgColor = this.parseColor(backgroundColor)
+      transformation.overlay.background = bgColor
+    }
+    
     const url = cloudinary.url(publicId, {
       resource_type: 'video',
       secure: true, // Force HTTPS to avoid mixed content issues
-      transformation: [
-        {
-          overlay: {
-            text: text,
-            font_family: 'Arial',
-            font_size: size,
-            font_weight: style === 'bold' ? 'bold' : 'normal',
-            text_align: 'center',
-          },
-          color: color,
-          gravity: gravity,
-          y: position.includes('top') ? 20 : position.includes('bottom') ? -20 : 0,
-        },
-        ...(backgroundColor && backgroundColor !== 'transparent' ? [{
-          overlay: {
-            text: text,
-            font_family: 'Arial',
-            font_size: size,
-            font_weight: style === 'bold' ? 'bold' : 'normal',
-            text_align: 'center',
-          },
-          background: backgroundColor,
-          gravity: gravity,
-          y: position.includes('top') ? 20 : position.includes('bottom') ? -20 : 0,
-        }] : [])
-      ],
+      transformation: [transformation],
     })
-
-    return url
+    
+    // Add cache-busting timestamp to force browser refresh
+    const timestamp = Date.now()
+    const finalUrl = url.includes('?') 
+      ? `${url}&_t=${timestamp}` 
+      : `${url}?_t=${timestamp}`
+    
+    return finalUrl
   }
 
   /**
