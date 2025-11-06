@@ -729,16 +729,23 @@ export default function DashboardPage() {
                           file: {
                             attributes: {
                               controlsList: 'nodownload',
+                              preload: 'auto',
+                              // Force no cache
+                              'data-cache': 'no',
                               onError: (e: any) => {
                                 console.error('🎥 Video element error:', e)
+                                console.error('🎥 Current URL:', selectedMedia.url)
                                 // Don't revert - let user see the error
                               }
-                            }
+                            },
+                            // Force reload
+                            forceVideo: true,
                           }
                         }}
                         onError={(e) => {
                           console.error('🎥 ReactPlayer error:', e)
                           console.error('🎥 Failed URL:', selectedMedia.url)
+                          console.error('🎥 Is this original?', selectedMedia.url === originalVideoUrl)
                           // Show error but don't revert to original
                           // The URL is set, just might need time to process
                         }}
@@ -746,10 +753,17 @@ export default function DashboardPage() {
                           console.log('🎥 ReactPlayer ready with URL:', selectedMedia.url)
                           console.log('📊 Dashboard: Is this the original video?', selectedMedia.url === originalVideoUrl)
                           console.log('📊 Dashboard: Original URL:', originalVideoUrl)
+                          console.log('📊 Dashboard: Current URL:', selectedMedia.url)
                           console.log('✅ Video loaded successfully - NOT reverting to original')
+                          // Verify URL matches what we expect
+                          if (selectedMedia.url === originalVideoUrl && lastProcessedUrl) {
+                            console.error('⚠️ WARNING: ReactPlayer loaded original URL but we have a processed URL!')
+                            console.error('⚠️ Processed URL was:', lastProcessedUrl)
+                          }
                         }}
                         onStart={() => {
                           console.log('▶️ Video started playing:', selectedMedia.url)
+                          console.log('▶️ Video key:', videoKey)
                         }}
                         onProgress={(state) => setCurrentTime(state.playedSeconds)}
                         onDuration={(dur) => setDuration(dur)}
