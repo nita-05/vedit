@@ -45,11 +45,24 @@ const nextConfig = {
         },
       ]
       
-      // Ensure binary files are treated as assets (not externalized)
+      // Ensure binary files are included as raw assets
       config.module = config.module || {}
       config.module.rules = config.module.rules || []
       
-      // Add rule to handle binary files - copy them as assets
+      // Add rule to handle binary files from ffmpeg-static
+      config.module.rules.push({
+        test: /ffmpeg-static.*\/ffmpeg$/,
+        type: 'asset/resource',
+        generator: {
+          filename: 'static/ffmpeg/[name][ext]',
+        },
+      })
+      
+      // Ensure node_modules/ffmpeg-static is not externalized
+      config.resolve = config.resolve || {}
+      config.resolve.alias = config.resolve.alias || {}
+      
+      // Add CopyWebpackPlugin to copy binary files (if needed)
       config.plugins = config.plugins || []
     }
     return config
