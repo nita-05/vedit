@@ -939,16 +939,31 @@ async function processWithCloudinaryFallback(
   const operation = instruction.operation
   const params = instruction.params || {}
   
-  console.log(`☁️ Processing with Cloudinary: ${operation}`)
+  console.log(`☁️ Processing with Cloudinary fallback: ${operation}`)
+  console.log(`☁️ Public ID: ${publicId}`)
+  console.log(`☁️ Params:`, JSON.stringify(params))
   
   // Map operations to Cloudinary transformations
   switch (operation) {
     case 'colorGrade':
-      return CloudinaryTransformProcessor.applyColorGrade(
+      const colorGradeUrl = CloudinaryTransformProcessor.applyColorGrade(
         publicId,
         params.preset || 'cinematic',
         resourceType
       )
+      console.log(`☁️ Color grade URL generated: ${colorGradeUrl}`)
+      // Ensure the URL is properly formatted for video streaming
+      if (resourceType === 'video') {
+        let finalUrl = colorGradeUrl
+        // Add cache-busting timestamp to force refresh
+        const timestamp = Date.now()
+        finalUrl = finalUrl.includes('?') 
+          ? `${finalUrl}&_t=${timestamp}` 
+          : `${finalUrl}?_t=${timestamp}`
+        console.log(`☁️ Final color grade URL with cache-bust: ${finalUrl}`)
+        return finalUrl
+      }
+      return colorGradeUrl
     
     case 'applyEffect':
       return CloudinaryTransformProcessor.applyEffect(
@@ -1002,36 +1017,55 @@ async function processWithCloudinaryFallback(
     case 'filter':
       // Map filter types to Cloudinary effects
       const filterType = params.type?.toLowerCase()
+      let filterUrl: string
+      
       if (filterType === 'blur') {
-        return cloudinary.url(publicId, {
+        filterUrl = cloudinary.url(publicId, {
           resource_type: resourceType,
-          secure: true, // Force HTTPS to avoid mixed content issues
+          secure: true,
           transformation: [{ effect: 'blur:300' }],
         })
       } else if (filterType === 'sharpen') {
-        return cloudinary.url(publicId, {
+        filterUrl = cloudinary.url(publicId, {
           resource_type: resourceType,
-          secure: true, // Force HTTPS to avoid mixed content issues
+          secure: true,
           transformation: [{ effect: 'sharpen:100' }],
         })
-      } else if (filterType === 'grayscale') {
-        return cloudinary.url(publicId, {
+      } else if (filterType === 'grayscale' || filterType === 'grayscale effect' || filterType === 'black & white') {
+        filterUrl = cloudinary.url(publicId, {
           resource_type: resourceType,
-          secure: true, // Force HTTPS to avoid mixed content issues
+          secure: true,
           transformation: [{ effect: 'grayscale' }],
+          fetch_format: resourceType === 'video' ? 'auto' : undefined,
         })
+        // Ensure video format is included
+        if (resourceType === 'video' && !filterUrl.includes('.mp4')) {
+          filterUrl = filterUrl.replace(/\/upload\/([^\/]+)\/(.+)$/, '/upload/$1/fl_streaming_attachment/$2')
+        }
       } else if (filterType === 'saturation') {
         const satValue = params.value || 1.0
-        const saturation = Math.round((satValue - 1) * 100) // Convert to percentage
-        return cloudinary.url(publicId, {
+        const saturation = Math.round((satValue - 1) * 100)
+        filterUrl = cloudinary.url(publicId, {
           resource_type: resourceType,
-          secure: true, // Force HTTPS to avoid mixed content issues
+          secure: true,
           transformation: [{ saturation }],
         })
+      } else {
+        // Default: return original
+        const resource = await cloudinary.api.resource(publicId, { resource_type: resourceType })
+        filterUrl = resource.secure_url || ''
       }
-      // Default: return original
-      const resource = await cloudinary.api.resource(publicId, { resource_type: resourceType })
-      return resource.secure_url || ''
+      
+      console.log(`☁️ Filter URL generated: ${filterUrl}`)
+      // Add cache-busting for video to force browser refresh
+      if (resourceType === 'video') {
+        const timestamp = Date.now()
+        filterUrl = filterUrl.includes('?') 
+          ? `${filterUrl}&_t=${timestamp}` 
+          : `${filterUrl}?_t=${timestamp}`
+        console.log(`☁️ Final filter URL with cache-bust: ${filterUrl}`)
+      }
+      return filterUrl
     
     case 'addTransition':
     case 'addMusic':
