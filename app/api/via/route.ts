@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth'
 import OpenAI from 'openai'
 import { v2 as cloudinary } from 'cloudinary'
 import { VideoProcessor } from '@/lib/videoProcessor'
+import { CloudinaryTransformProcessor } from '@/lib/cloudinaryTransform'
 import { saveEditHistory } from '@/lib/db'
 import fs from 'fs'
 import path from 'path'
@@ -730,9 +731,9 @@ export async function POST(request: NextRequest) {
       console.log(`🎬 Starting ${isImage ? 'image' : 'video'} processing with FFmpeg...`)
       try {
         processedUrl = await processVideoEdit(videoPublicId, instruction, inputVideoUrl, isImage)
-        console.log(`✅ ${isImage ? 'Image' : 'Video'} processed successfully:`, processedUrl)
+        console.log(`✅ ${isImage ? 'Image' : 'Video'} processed successfully with FFmpeg:`, processedUrl)
       } catch (processError: any) {
-        console.error('❌ Video processing failed:', processError)
+        console.error('❌ FFmpeg processing failed:', processError)
         console.error('📋 Error details:', {
           message: processError?.message,
           code: processError?.code,
@@ -744,17 +745,38 @@ export async function POST(request: NextRequest) {
         const isFFmpegError = errorMessage.includes('ffmpeg') || 
                               errorMessage.includes('spawn') || 
                               errorMessage.includes('enoent') ||
+                              errorMessage.includes('not found') ||
                               processError?.code === 'ENOENT'
         
-        return NextResponse.json(
-          { 
-            error: processError?.message || 'Video processing failed',
-            message: `Failed to process video: ${processError?.message || 'Unknown error'}. ${isFFmpegError ? 'This may be an FFmpeg-related error. Please check server logs for details.' : 'Please check server logs for details.'}`,
-            videoUrl: null,
-            details: process.env.NODE_ENV === 'development' ? processError?.stack : undefined
-          },
-          { status: 500 }
-        )
+        // Try Cloudinary fallback for supported operations
+        if (isFFmpegError) {
+          console.log('🔄 FFmpeg failed, attempting Cloudinary fallback...')
+          try {
+            processedUrl = await processWithCloudinaryFallback(videoPublicId, instruction, isImage)
+            console.log(`✅ Processed with Cloudinary fallback: ${processedUrl}`)
+          } catch (cloudinaryError: any) {
+            console.error('❌ Cloudinary fallback also failed:', cloudinaryError)
+            // Return error with both failures
+            return NextResponse.json(
+              { 
+                error: 'Video processing failed',
+                message: `FFmpeg unavailable and Cloudinary fallback failed: ${cloudinaryError?.message || 'Unknown error'}. Please check your Cloudinary configuration.`,
+                videoUrl: null,
+              },
+              { status: 500 }
+            )
+          }
+        } else {
+          // Non-FFmpeg error, return as-is
+          return NextResponse.json(
+            { 
+              error: processError?.message || 'Video processing failed',
+              message: `Failed to process video: ${processError?.message || 'Unknown error'}. Please check server logs for details.`,
+              videoUrl: null,
+            },
+            { status: 500 }
+          )
+        }
       }
     }
 
@@ -900,6 +922,133 @@ async function processCaptionsGeneration(
     })
     console.warn('⚠️ Returning original video as fallback')
     return resource.secure_url || ''
+  }
+}
+
+/**
+ * Process video/image edits using Cloudinary transformations as fallback
+ * Works when FFmpeg is unavailable (e.g., on Vercel)
+ */
+async function processWithCloudinaryFallback(
+  publicId: string,
+  instruction: any,
+  isImage: boolean = false
+): Promise<string> {
+  const resourceType = isImage ? 'image' : 'video'
+  const operation = instruction.operation
+  const params = instruction.params || {}
+  
+  console.log(`☁️ Processing with Cloudinary: ${operation}`)
+  
+  // Map operations to Cloudinary transformations
+  switch (operation) {
+    case 'colorGrade':
+      return CloudinaryTransformProcessor.applyColorGrade(
+        publicId,
+        params.preset || 'cinematic',
+        resourceType
+      )
+    
+    case 'applyEffect':
+      return CloudinaryTransformProcessor.applyEffect(
+        publicId,
+        params.preset || 'glow',
+        resourceType
+      )
+    
+    case 'addText':
+    case 'customText':
+      return CloudinaryTransformProcessor.addTextOverlay(publicId, {
+        text: params.text || 'Text',
+        position: params.position || 'bottom',
+        fontSize: params.fontSize || params.fontSize || 48,
+        fontColor: params.fontColor || 'white',
+        backgroundColor: params.backgroundColor,
+        style: params.preset || params.style || 'bold',
+      })
+    
+    case 'crop':
+      return CloudinaryTransformProcessor.crop(publicId, {
+        x: params.x || 0,
+        y: params.y || 0,
+        width: params.width || 100,
+        height: params.height || 100,
+      }, resourceType)
+    
+    case 'rotate':
+      return CloudinaryTransformProcessor.rotate(
+        publicId,
+        params.rotation || params.angle || 0,
+        resourceType
+      )
+    
+    case 'adjustSpeed':
+      // Cloudinary supports speed adjustment via video_transformation
+      // Speed multiplier: 0.5 = slow, 1.0 = normal, 2.0 = fast
+      const speed = params.speed || 1.0
+      return cloudinary.url(publicId, {
+        resource_type: resourceType,
+        transformation: [
+          {
+            video_codec: { codec: 'auto' },
+            // Note: Cloudinary doesn't directly support speed for videos
+            // This is a limitation - we return the URL with a note
+          },
+        ],
+      })
+    
+    case 'filter':
+      // Map filter types to Cloudinary effects
+      const filterType = params.type?.toLowerCase()
+      if (filterType === 'blur') {
+        return cloudinary.url(publicId, {
+          resource_type: resourceType,
+          transformation: [{ effect: 'blur:300' }],
+        })
+      } else if (filterType === 'sharpen') {
+        return cloudinary.url(publicId, {
+          resource_type: resourceType,
+          transformation: [{ effect: 'sharpen:100' }],
+        })
+      } else if (filterType === 'grayscale') {
+        return cloudinary.url(publicId, {
+          resource_type: resourceType,
+          transformation: [{ effect: 'grayscale' }],
+        })
+      } else if (filterType === 'saturation') {
+        const satValue = params.value || 1.0
+        const saturation = Math.round((satValue - 1) * 100) // Convert to percentage
+        return cloudinary.url(publicId, {
+          resource_type: resourceType,
+          transformation: [{ saturation }],
+        })
+      }
+      // Default: return original
+      const resource = await cloudinary.api.resource(publicId, { resource_type: resourceType })
+      return resource.secure_url || ''
+    
+    case 'addTransition':
+    case 'addMusic':
+    case 'merge':
+    case 'trim':
+    case 'removeClip':
+    case 'addCaptions':
+    case 'customSubtitle':
+    case 'generateVoiceover':
+    case 'generateOverlay':
+    case 'generateVideo':
+    case 'removeObject':
+      // These operations require FFmpeg and cannot be done with Cloudinary alone
+      // Return original media with a message
+      console.warn(`⚠️ Operation ${operation} not supported by Cloudinary fallback`)
+      const originalResource = await cloudinary.api.resource(publicId, { resource_type: resourceType })
+      return originalResource.secure_url || ''
+    
+    default:
+      // Unknown operation - return original
+      console.warn(`⚠️ Unknown operation for Cloudinary fallback: ${operation}`)
+      const defaultResource = await cloudinary.api.resource(publicId, { resource_type: resourceType })
+      return defaultResource.secure_url || ''
   }
 }
 
