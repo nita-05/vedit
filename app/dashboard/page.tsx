@@ -47,6 +47,7 @@ export default function DashboardPage() {
   const [isBrandKitsOpen, setIsBrandKitsOpen] = useState(false)
   const [selectedVoiceProfile, setSelectedVoiceProfile] = useState<any>(null)
   const [originalVideoUrl, setOriginalVideoUrl] = useState<string | null>(null) // Track original video URL
+  const [originalVideoDuration, setOriginalVideoDuration] = useState<number>(0) // Track original video duration
   const [lastProcessedUrl, setLastProcessedUrl] = useState<string | null>(null) // Track last processed URL
   const [processingNotification, setProcessingNotification] = useState<{show: boolean, message: string, url: string} | null>(null)
   const [isPreviewOpen, setIsPreviewOpen] = useState(false)
@@ -782,11 +783,43 @@ export default function DashboardPage() {
                                 const video = e?.target
                                 if (video && video.duration) {
                                   const newDuration = video.duration
+                                  const isOriginal = selectedMedia.url === originalVideoUrl
+                                  
                                   console.log('✅ Video metadata loaded:', selectedMedia.url)
                                   console.log('📊 Video duration:', newDuration, 'seconds')
                                   console.log('📊 Video duration formatted:', `${Math.floor(newDuration / 60)}:${Math.floor(newDuration % 60).toString().padStart(2, '0')}`)
-                                  // Update duration state
-                                  setDuration(newDuration)
+                                  console.log('📊 Is original video:', isOriginal)
+                                  
+                                  // Store original video duration
+                                  if (isOriginal && newDuration > 0) {
+                                    setOriginalVideoDuration(newDuration)
+                                    console.log('💾 Stored original video duration:', newDuration, 'seconds')
+                                  }
+                                  
+                                  // For processed videos, if duration is significantly less than original, use original
+                                  // This handles Cloudinary streaming where metadata loads progressively
+                                  if (!isOriginal && originalVideoDuration > 0) {
+                                    const durationDiff = originalVideoDuration - newDuration
+                                    const percentDiff = (durationDiff / originalVideoDuration) * 100
+                                    
+                                    console.log('📊 Duration comparison:', {
+                                      original: originalVideoDuration,
+                                      current: newDuration,
+                                      difference: durationDiff,
+                                      percentDiff: percentDiff.toFixed(1) + '%'
+                                    })
+                                    
+                                    // If current duration is less than 80% of original, likely streaming issue
+                                    // Use original duration as fallback
+                                    if (percentDiff > 20 && newDuration < originalVideoDuration * 0.8) {
+                                      console.log('⚠️ Processed video duration seems incomplete (streaming), using original duration as fallback')
+                                      setDuration(originalVideoDuration)
+                                    } else {
+                                      setDuration(newDuration)
+                                    }
+                                  } else {
+                                    setDuration(newDuration)
+                                  }
                                 }
                               },
                               onCanPlay: () => {
@@ -796,8 +829,25 @@ export default function DashboardPage() {
                                 const video = e?.target
                                 if (video && video.duration) {
                                   const newDuration = video.duration
+                                  const isOriginal = selectedMedia.url === originalVideoUrl
+                                  
                                   console.log('⏱️ Duration changed:', newDuration, 'seconds')
-                                  setDuration(newDuration)
+                                  
+                                  // For processed videos, only update if duration is close to or exceeds original
+                                  // This prevents showing incomplete durations during streaming
+                                  if (!isOriginal && originalVideoDuration > 0) {
+                                    // If new duration is within 5% of original or exceeds it, use it
+                                    if (newDuration >= originalVideoDuration * 0.95 || newDuration >= originalVideoDuration) {
+                                      console.log('✅ Duration stabilized or reached original length')
+                                      setDuration(newDuration >= originalVideoDuration ? originalVideoDuration : newDuration)
+                                    } else {
+                                      // Still streaming, keep using original duration
+                                      console.log('⏳ Duration still loading, using original duration:', originalVideoDuration)
+                                      setDuration(originalVideoDuration)
+                                    }
+                                  } else {
+                                    setDuration(newDuration)
+                                  }
                                 }
                               }
                             },
