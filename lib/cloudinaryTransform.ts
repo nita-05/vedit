@@ -121,50 +121,54 @@ export class CloudinaryTransformProcessor {
     resourceType: 'video' | 'image' = 'video'
   ): string {
     const presets: { [key: string]: any } = {
-      'warm': { effect: 'art:zorro', overlay: 'colorize:40:yellow' },
-      'cool': { effect: 'art:zorro', overlay: 'colorize:40:blue' },
-      'vintage': { effect: 'art:zorro', colorize: 'sepia:50' },
-      'moody': { effect: 'art:zorro', brightness: -20, contrast: 30 },
-      'cinematic': { effect: 'art:zorro', brightness: 5, contrast: 10, saturation: -10 },
-      'noir': { effect: 'art:zorro', colorize: 'grayscale' },
-      'sepia': { effect: 'art:zorro', colorize: 'sepia:100' },
-      'dreamy': { effect: 'art:zorro', brightness: 5, saturation: -5 },
-      'vibrant': { effect: 'art:zorro', saturation: 40 },
-      'muted': { effect: 'art:zorro', saturation: -30 },
-      'cyberpunk': { effect: 'art:zorro', saturation: 50, brightness: 20 },
-      'neon': { effect: 'art:zorro', saturation: 60, brightness: 10 },
-      'golden hour': { effect: 'art:zorro', overlay: 'colorize:30:gold' },
-      'high contrast': { effect: 'art:zorro', contrast: 50 },
-      'black & white': { effect: 'art:zorro', colorize: 'grayscale' },
-      'monochrome': { effect: 'art:zorro', colorize: 'grayscale' },
+      'warm': { brightness: 10, saturation: 30, effect: 'colorize:20:yellow' },
+      'cool': { brightness: 5, saturation: 25, effect: 'colorize:20:blue' },
+      'vintage': { effect: 'sepia:50', saturation: -20 },
+      'moody': { brightness: -20, contrast: 30, saturation: -10 },
+      'cinematic': { brightness: 5, contrast: 10, saturation: -10 },
+      'noir': { effect: 'grayscale' },
+      'sepia': { effect: 'sepia:100' },
+      'dreamy': { brightness: 5, saturation: -5, effect: 'blur:100' },
+      'vibrant': { saturation: 40, brightness: 5 },
+      'muted': { saturation: -30, brightness: -5 },
+      'cyberpunk': { saturation: 50, brightness: 20, contrast: 20 },
+      'neon': { saturation: 60, brightness: 10, contrast: 15 },
+      'golden hour': { brightness: 15, saturation: 30, effect: 'colorize:30:gold' },
+      'high contrast': { contrast: 50, brightness: 5 },
+      'black & white': { effect: 'grayscale' },
+      'monochrome': { effect: 'grayscale' },
+      'natural tone': { brightness: 5, saturation: 10 },
+      'studio tone': { brightness: 10, contrast: 15, saturation: 10 },
+      'bright punch': { brightness: 15, saturation: 35, contrast: 20 },
     }
 
     const presetConfig = presets[preset?.toLowerCase()] || {}
-    const transformations: any[] = []
-
+    
+    // Build single transformation object with all properties
+    const transformation: any = {}
+    
+    if (presetConfig.brightness !== undefined) {
+      transformation.brightness = presetConfig.brightness
+    }
+    if (presetConfig.contrast !== undefined) {
+      transformation.contrast = presetConfig.contrast
+    }
+    if (presetConfig.saturation !== undefined) {
+      transformation.saturation = presetConfig.saturation
+    }
     if (presetConfig.effect) {
-      transformations.push({ effect: presetConfig.effect })
+      transformation.effect = presetConfig.effect
     }
-    if (presetConfig.brightness) {
-      transformations.push({ brightness: presetConfig.brightness })
-    }
-    if (presetConfig.contrast) {
-      transformations.push({ contrast: presetConfig.contrast })
-    }
-    if (presetConfig.saturation) {
-      transformations.push({ saturation: presetConfig.saturation })
-    }
-    if (presetConfig.colorize) {
-      transformations.push({ effect: presetConfig.colorize })
-    }
-    if (presetConfig.overlay) {
-      transformations.push({ overlay: presetConfig.overlay })
-    }
+    
+    // If no transformations, use a minimal effect to avoid empty transformation
+    const transformations = Object.keys(transformation).length > 0 
+      ? [transformation] 
+      : []
 
     return cloudinary.url(publicId, {
       resource_type: resourceType,
       secure: true, // Force HTTPS to avoid mixed content issues
-      transformation: transformations.length > 0 ? transformations : [{ effect: 'art:zorro' }],
+      transformation: transformations.length > 0 ? transformations : [],
     })
   }
 
