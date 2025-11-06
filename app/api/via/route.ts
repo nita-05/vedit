@@ -1014,17 +1014,7 @@ async function processWithCloudinaryFallback(
         resourceType
       )
       console.log(`☁️ Color grade URL generated: ${colorGradeUrl}`)
-      // Ensure the URL is properly formatted for video streaming
-      if (resourceType === 'video') {
-        let finalUrl = colorGradeUrl
-        // Add cache-busting timestamp to force refresh
-        const timestamp = Date.now()
-        finalUrl = finalUrl.includes('?') 
-          ? `${finalUrl}&_t=${timestamp}` 
-          : `${finalUrl}?_t=${timestamp}`
-        console.log(`☁️ Final color grade URL with cache-bust: ${finalUrl}`)
-        return finalUrl
-      }
+      // Color grade URL already has cache-busting from CloudinaryTransformProcessor
       return colorGradeUrl
     
     case 'applyEffect':
@@ -1100,11 +1090,10 @@ async function processWithCloudinaryFallback(
           transformation: [{ effect: 'grayscale' }],
           fetch_format: resourceType === 'video' ? 'auto' : undefined,
         })
-        // Add cache-busting to force browser refresh
+        // Remove existing query params and add fresh cache-busting
+        const cleanUrl = filterUrl.split('?')[0]
         const timestamp = Date.now()
-        filterUrl = filterUrl.includes('?') 
-          ? `${filterUrl}&_t=${timestamp}` 
-          : `${filterUrl}?_t=${timestamp}`
+        filterUrl = `${cleanUrl}?_t=${timestamp}`
         console.log(`☁️ Generated grayscale URL with cache-bust: ${filterUrl}`)
       } else if (filterType === 'saturation') {
         const satValue = params.value || 1.0
@@ -1122,11 +1111,11 @@ async function processWithCloudinaryFallback(
       
       console.log(`☁️ Filter URL generated: ${filterUrl}`)
       // Add cache-busting for video to force browser refresh
+      // Remove existing query params to avoid duplicates
       if (resourceType === 'video') {
+        const cleanUrl = filterUrl.split('?')[0]
         const timestamp = Date.now()
-        filterUrl = filterUrl.includes('?') 
-          ? `${filterUrl}&_t=${timestamp}` 
-          : `${filterUrl}?_t=${timestamp}`
+        filterUrl = `${cleanUrl}?_t=${timestamp}`
         console.log(`☁️ Final filter URL with cache-bust: ${filterUrl}`)
       }
       return filterUrl

@@ -100,10 +100,10 @@ export class CloudinaryTransformProcessor {
     })
     
     // Add cache-busting timestamp to force browser refresh
+    // Remove existing _t parameter if present to avoid duplicates
+    const cleanUrl = url.split('?')[0] // Remove existing query params
     const timestamp = Date.now()
-    const finalUrl = url.includes('?') 
-      ? `${url}&_t=${timestamp}` 
-      : `${url}?_t=${timestamp}`
+    const finalUrl = `${cleanUrl}?_t=${timestamp}`
     
     console.log(`☁️ Generated Cloudinary text overlay URL: ${finalUrl.substring(0, 100)}...`)
     
@@ -170,10 +170,10 @@ export class CloudinaryTransformProcessor {
     })
     
     // Add cache-busting timestamp to force browser refresh
+    // Remove existing _t parameter if present to avoid duplicates
+    const cleanUrl = url.split('?')[0] // Remove existing query params
     const timestamp = Date.now()
-    const finalUrl = url.includes('?') 
-      ? `${url}&_t=${timestamp}` 
-      : `${url}?_t=${timestamp}`
+    const finalUrl = `${cleanUrl}?_t=${timestamp}`
     
     console.log(`☁️ Generated Cloudinary color grade URL: ${finalUrl.substring(0, 100)}...`)
     
@@ -226,10 +226,10 @@ export class CloudinaryTransformProcessor {
     })
     
     // Add cache-busting timestamp to force browser refresh
+    // Remove existing _t parameter if present to avoid duplicates
+    const cleanUrl = url.split('?')[0] // Remove existing query params
     const timestamp = Date.now()
-    const finalUrl = url.includes('?') 
-      ? `${url}&_t=${timestamp}` 
-      : `${url}?_t=${timestamp}`
+    const finalUrl = `${cleanUrl}?_t=${timestamp}`
     
     console.log(`☁️ Generated Cloudinary effect URL: ${finalUrl.substring(0, 100)}...`)
     
