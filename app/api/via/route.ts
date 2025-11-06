@@ -1148,10 +1148,9 @@ async function processWithCloudinaryFallback(
       throw new Error(`Operation "${operation}" requires FFmpeg processing. Please ensure Render API is configured or FFmpeg is available.`)
     
     default:
-      // Unknown operation - return original
-      console.warn(`⚠️ Unknown operation for Cloudinary fallback: ${operation}`)
-      const defaultResource = await cloudinary.api.resource(publicId, { resource_type: resourceType })
-      return defaultResource.secure_url || ''
+      // Unknown operation - throw error instead of returning original
+      console.error(`❌ Unknown operation for Cloudinary fallback: ${operation}`)
+      throw new Error(`Operation "${operation}" is not supported by Cloudinary fallback. Please use FFmpeg processing or a supported operation.`)
   }
 }
 
