@@ -1439,9 +1439,11 @@ export class VideoProcessor {
       
       let command = ffmpeg(normalizedInputPath)
       
-      // For images, treat as single-frame video with loop
+      // For images, process directly without loop/time flags
+      // Images should be processed as static images, not converted to video first
       if (isImage) {
-        command = command.inputOptions(['-loop', '1', '-t', '1']) // 1 second duration
+        // No special input options needed for images - FFmpeg handles them natively
+        // We'll output a single frame at the end
       }
 
       switch (instruction.operation) {
@@ -1577,13 +1579,14 @@ export class VideoProcessor {
 
       // Set output options based on media type
       if (isImage) {
-        // For images, output as image format
+        // For images, output as image format with single frame
         const ext = outputPath.match(/\.(\w+)$/)?.[1] || 'png'
+        // Always output single frame for images
+        command.outputOptions(['-frames:v', '1'])
         if (ext === 'jpg' || ext === 'jpeg') {
           command.outputOptions(['-q:v', '2']) // High quality JPEG
-        } else {
-          command.outputOptions(['-frames:v', '1']) // Single frame for PNG/GIF
         }
+        // For images, we don't need video codec - FFmpeg will use image encoder automatically
       } else {
         // For videos, use standard video encoding
         command.outputOptions(['-c:v libx264', '-preset medium', '-crf 23'])
