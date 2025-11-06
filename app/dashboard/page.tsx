@@ -91,7 +91,8 @@ export default function DashboardPage() {
   useEffect(() => {
     // Skip if this is a manual update (from onVideoUpdate)
     if (isManualUpdateRef.current) {
-      isManualUpdateRef.current = false
+      // Don't reset the flag here - let it be reset by the timeout in onVideoUpdate
+      // This prevents race conditions where useEffect runs before flag is set
       return
     }
     
@@ -1133,19 +1134,24 @@ export default function DashboardPage() {
                   setDuration(originalVideoDuration)
                 }
                 
+                // Mark as manual update FIRST to prevent useEffect from interfering
+                isManualUpdateRef.current = true
+                lastVideoKeyUpdateRef.current = Date.now()
+                
                 // Update state in the correct order to force ReactPlayer remount
                 // First update the URL and mediaItems
                 setMediaItems(updated)
                 setSelectedMedia({ ...selectedMedia, url })
                 setLastProcessedUrl(url) // Track last processed URL
                 
-                // Mark as manual update to prevent useEffect from triggering
-                isManualUpdateRef.current = true
-                
                 // Update videoKey immediately to force ReactPlayer to remount with new URL
                 // This must happen AFTER URL is set to ensure ReactPlayer gets the new URL
                 setVideoKey(newVideoKey)
-                lastVideoKeyUpdateRef.current = Date.now()
+                
+                // Keep the flag set for a bit longer to prevent race conditions
+                setTimeout(() => {
+                  isManualUpdateRef.current = false
+                }, 100)
                 
                 console.log('✅ Dashboard: State updated! Video key:', newVideoKey)
                 console.log('✅ Dashboard: New URL set:', url)

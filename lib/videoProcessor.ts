@@ -7,11 +7,23 @@ import { promisify } from 'util'
 import { execSync } from 'child_process'
 
 // Function to get FFmpeg installer path (lazy load to avoid module load issues)
+// Cache to avoid repeated searches
+let cachedInstallerPath: string | null = null
+
 function getFFmpegInstallerPath(): string | null {
-  console.log('🔍 Starting FFmpeg binary search...')
-  console.log(`📁 process.cwd(): ${process.cwd()}`)
-  console.log(`📁 Platform: ${process.platform}`)
-  console.log(`📁 VERCEL env: ${process.env.VERCEL}`)
+  // Return cached path if available and exists
+  if (cachedInstallerPath && fs.existsSync(cachedInstallerPath)) {
+    return cachedInstallerPath
+  }
+  
+  // Only log on first search to reduce noise
+  const isFirstSearch = !cachedInstallerPath
+  if (isFirstSearch) {
+    console.log('🔍 Starting FFmpeg binary search...')
+    console.log(`📁 process.cwd(): ${process.cwd()}`)
+    console.log(`📁 Platform: ${process.platform}`)
+    console.log(`📁 VERCEL env: ${process.env.VERCEL}`)
+  }
   
   // PRIORITY 1: Try ffmpeg-static (best for Vercel/serverless environments)
   try {
@@ -29,6 +41,7 @@ function getFFmpegInstallerPath(): string | null {
         // In production/Vercel, it should point to the actual binary
         if (fs.existsSync(staticPath)) {
           console.log(`✅ FFmpeg static path (absolute, verified): ${staticPath}`)
+          cachedInstallerPath = staticPath // Cache the path
           return staticPath
         } else {
           // In development, the path might be in .next which is created during build
@@ -43,6 +56,7 @@ function getFFmpegInstallerPath(): string | null {
             for (const possiblePath of possiblePaths) {
               if (fs.existsSync(possiblePath)) {
                 console.log(`✅ FFmpeg static found in module: ${possiblePath}`)
+                cachedInstallerPath = possiblePath // Cache the path
                 return possiblePath
               }
             }
@@ -69,6 +83,7 @@ function getFFmpegInstallerPath(): string | null {
       const installerPath = ffmpegInstaller.path
       if (fs.existsSync(installerPath)) {
         console.log(`✅ FFmpeg installer path from require (absolute): ${installerPath}`)
+        cachedInstallerPath = installerPath // Cache the path
         return installerPath
       } else {
         // Try relative to the module
@@ -198,6 +213,7 @@ function getFFmpegInstallerPath(): string | null {
             try {
               execSync(`"${binaryPath}" -version`, { stdio: 'pipe', timeout: 2000 })
               console.log(`✅ Verified FFmpeg binary at: ${binaryPath}`)
+              cachedInstallerPath = binaryPath // Cache the path
               return binaryPath
             } catch (verifyError: any) {
               console.log(`  ⚠️ Binary exists but verification failed: ${verifyError?.message}`)
@@ -235,6 +251,7 @@ function isVercelOrLinuxEnv(): boolean {
 
 // Configure FFmpeg path - works on Windows, Linux (Vercel), and macOS
 let ffmpegPathSet = false
+let cachedFFmpegPath: string | null = null // Cache the found FFmpeg path
 
 // On Vercel/Linux, try to find and copy FFmpeg to /tmp early
 // Enhanced Vercel FFmpeg initialization - runs at module load
@@ -687,6 +704,21 @@ export class VideoProcessor {
   }
 
   private ensureFFmpegPath(): void {
+    // Use cached path if available and verified
+    if (cachedFFmpegPath) {
+      try {
+        execSync(`${cachedFFmpegPath} -version`, { stdio: 'pipe', timeout: 2000 })
+        const ffmpegModule = ffmpeg as any
+        if (ffmpegModule.ffmpegPath !== cachedFFmpegPath) {
+          ffmpeg.setFfmpegPath(cachedFFmpegPath)
+        }
+        return // Use cached path, skip search
+      } catch {
+        // Cached path no longer works, clear cache
+        cachedFFmpegPath = null
+      }
+    }
+    
     // Check if FFmpeg path is already set and working
     try {
       const ffmpegModule = ffmpeg as any
@@ -695,11 +727,10 @@ export class VideoProcessor {
         // Try to verify the current path still works
         try {
           execSync(`${currentPath} -version`, { stdio: 'pipe', timeout: 2000 })
-          console.log(`✅ FFmpeg path already set and verified: ${currentPath}`)
+          cachedFFmpegPath = currentPath // Cache the working path
           return
         } catch {
           // Path is set but not working, continue to find new path
-          console.log(`⚠️ FFmpeg path set but not working, searching for new path...`)
         }
       }
     } catch {
@@ -713,6 +744,7 @@ export class VideoProcessor {
         try {
           execSync(`${tmpFFmpegPath} -version`, { stdio: 'pipe', timeout: 2000 })
           ffmpeg.setFfmpegPath(tmpFFmpegPath)
+          cachedFFmpegPath = tmpFFmpegPath // Cache the path
           console.log(`✅ Using FFmpeg from /tmp (already exists): ${tmpFFmpegPath}`)
           return
         } catch {
@@ -2380,7 +2412,8 @@ export class VideoProcessor {
       case 'wipe':
         return command.videoFilters(`crop=iw:ih*(t/${dur}):0:0`)
       case 'zoom':
-        return command.videoFilters(`zoompan=z='if(lte(zoom,1.0),1.5,max(1.001,zoom-0.0015))':d=125`)
+        // Optimized zoom: faster processing with shorter duration and simpler calculation
+        return command.videoFilters(`zoompan=z='if(lte(zoom,1.0),1.3,max(1.001,zoom-0.002))':d=60:x=iw/2:y=ih/2`)
       case 'cross dissolve':
         return command.videoFilters(`fade=t=in:st=0:d=${dur},fade=t=out:st=${dur}:d=${dur}`)
       case 'blur in/out':
