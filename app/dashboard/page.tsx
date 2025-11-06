@@ -718,11 +718,31 @@ export default function DashboardPage() {
                         width="100%"
                         height="auto"
                         playing={false}
-                        onError={(e) => console.error('🎥 ReactPlayer error:', e)}
+                        config={{
+                          file: {
+                            attributes: {
+                              controlsList: 'nodownload',
+                              onError: (e: any) => {
+                                console.error('🎥 Video element error:', e)
+                                // Don't revert - let user see the error
+                              }
+                            }
+                          }
+                        }}
+                        onError={(e) => {
+                          console.error('🎥 ReactPlayer error:', e)
+                          console.error('🎥 Failed URL:', selectedMedia.url)
+                          // Show error but don't revert to original
+                          // The URL is set, just might need time to process
+                        }}
                         onReady={() => {
                           console.log('🎥 ReactPlayer ready with URL:', selectedMedia.url)
                           console.log('📊 Dashboard: Is this the original video?', selectedMedia.url === originalVideoUrl)
                           console.log('📊 Dashboard: Original URL:', originalVideoUrl)
+                          console.log('✅ Video loaded successfully - NOT reverting to original')
+                        }}
+                        onStart={() => {
+                          console.log('▶️ Video started playing:', selectedMedia.url)
                         }}
                         onProgress={(state) => setCurrentTime(state.playedSeconds)}
                         onDuration={(dur) => setDuration(dur)}
@@ -883,6 +903,13 @@ export default function DashboardPage() {
             onVideoUpdate={(url) => {
               console.log('🎬 Dashboard: onVideoUpdate called with URL:', url)
               console.log('🎬 Dashboard: Current selectedMedia:', selectedMedia)
+              
+              // Validate URL before updating
+              if (!url || !url.startsWith('http')) {
+                console.error('❌ Dashboard: Invalid URL received:', url)
+                return
+              }
+              
               if (selectedMedia) {
                 // Check if URL actually changed
                 const urlChanged = url !== selectedMedia.url
@@ -893,6 +920,12 @@ export default function DashboardPage() {
                 console.log('📊 Dashboard: Original URL:', originalVideoUrl)
                 console.log('📊 Dashboard: Previous URL:', selectedMedia.url)
                 console.log('📊 Dashboard: New URL:', url)
+                
+                // IMPORTANT: Only update if URL is different and valid
+                if (!urlChanged) {
+                  console.log('⚠️ Dashboard: URL unchanged, skipping update')
+                  return
+                }
                 
                 // Add current URL to history before updating
                 if (selectedMedia.url && urlChanged) {
@@ -911,10 +944,16 @@ export default function DashboardPage() {
                 console.log('🎬 Dashboard: New mediaItems length:', updated.length)
                 console.log('🎬 Dashboard: Updating selectedMedia URL from:', selectedMedia.url)
                 console.log('🎬 Dashboard: To:', url)
+                
+                // Update state - this will trigger ReactPlayer to reload
                 setMediaItems(updated)
                 setSelectedMedia({ ...selectedMedia, url })
-                setVideoKey(prev => prev + 1) // Force ReactPlayer remount
+                setVideoKey(prev => prev + 1) // Force ReactPlayer remount with new URL
                 setLastProcessedUrl(url) // Track last processed URL
+                
+                console.log('✅ Dashboard: State updated! Video key:', videoKey + 1)
+                console.log('✅ Dashboard: New URL set:', url)
+                console.log('✅ Dashboard: ReactPlayer will reload with new URL')
                 
                 // Show notification if video was actually processed
                 if (urlChanged && !isOriginal) {
