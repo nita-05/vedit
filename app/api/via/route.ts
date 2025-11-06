@@ -979,12 +979,12 @@ async function processCaptionsGeneration(
     return processedUrl
   } catch (error) {
     console.error('❌ Caption generation error:', error)
-    // Fallback to original video
-    const resource = await cloudinary.api.resource(publicId, {
-      resource_type: 'video',
-    })
-    console.warn('⚠️ Returning original video as fallback')
-    return resource.secure_url || ''
+    // DO NOT return original video - throw error instead
+    // This ensures the frontend knows processing failed and doesn't show original as processed
+    throw new Error(
+      `Caption generation failed: ${error instanceof Error ? error.message : 'Unknown error'}. ` +
+      `Please check server logs for more details.`
+    )
   }
 }
 
@@ -1110,9 +1110,9 @@ async function processWithCloudinaryFallback(
           transformation: [{ saturation }],
         })
       } else {
-        // Default: return original
-        const resource = await cloudinary.api.resource(publicId, { resource_type: resourceType })
-        filterUrl = resource.secure_url || ''
+        // Unknown filter type - throw error instead of returning original
+        console.error(`❌ Unknown filter type: ${params.type}`)
+        throw new Error(`Filter type "${params.type}" is not supported. Supported types: saturation, noise reduction.`)
       }
       
       console.log(`☁️ Filter URL generated: ${filterUrl}`)
@@ -1563,16 +1563,12 @@ async function generateAIVoiceover(publicId: string, params: any): Promise<strin
       // Ignore cleanup errors
     }
     
-    // Return original video URL as fallback
-    try {
-      const resource = await cloudinary.api.resource(publicId, {
-        resource_type: 'video',
-      })
-      return resource.secure_url || ''
-    } catch (resourceError) {
-      console.error('❌ Failed to get original video:', resourceError)
-      return ''
-    }
+    // DO NOT return original video - throw error instead
+    // This ensures the frontend knows processing failed and doesn't show original as processed
+    throw new Error(
+      `Voiceover generation failed: ${error instanceof Error ? error.message : 'Unknown error'}. ` +
+      `Please check server logs for more details.`
+    )
   }
 }
 

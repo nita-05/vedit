@@ -67,7 +67,7 @@ export default function DashboardPage() {
       console.log('🎬 Dashboard: selectedMedia URL:', selectedMedia.url)
       // Store original URL ONLY when first selecting a video (not when URL is updated after processing)
       // Only set if originalVideoUrl is null AND this is likely the first load (not a processed URL)
-      if (!originalVideoUrl && selectedMedia.url && !selectedMedia.url.includes('_processed') && !selectedMedia.url.includes('e_grayscale') && !selectedMedia.url.includes('e_') && !selectedMedia.url.includes('?_t=')) {
+      if (!originalVideoUrl && selectedMedia.url && !selectedMedia.url.includes('_processed') && !selectedMedia.url.includes('e_grayscale') && !selectedMedia.url.includes('e_') && !selectedMedia.url.includes('?_t=') && !selectedMedia.url.includes('?_cb=')) {
         setOriginalVideoUrl(selectedMedia.url)
         console.log('📌 Dashboard: Stored original video URL:', selectedMedia.url)
       } else if (originalVideoUrl && selectedMedia.url === originalVideoUrl) {
@@ -79,6 +79,28 @@ export default function DashboardPage() {
       }
     }
   }, [selectedMedia])
+
+  // Force ReactPlayer remount when URL changes significantly (safety net)
+  // This catches URL changes that might not trigger onVideoUpdate
+  const prevUrlRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (selectedMedia?.url && selectedMedia.type === 'video') {
+      // Extract base URL without query params for comparison
+      const baseUrl = selectedMedia.url.split('?')[0]
+      const prevBaseUrl = prevUrlRef.current?.split('?')[0]
+      
+      // If URL changed significantly (not just cache-busting params), increment videoKey
+      if (prevBaseUrl && baseUrl !== prevBaseUrl && baseUrl !== originalVideoUrl?.split('?')[0]) {
+        console.log('🔄 Dashboard: URL base changed (safety net), forcing ReactPlayer remount')
+        console.log('🔄 Dashboard: Old base URL:', prevBaseUrl)
+        console.log('🔄 Dashboard: New base URL:', baseUrl)
+        setVideoKey(prev => prev + 1)
+      }
+      
+      // Update ref for next comparison
+      prevUrlRef.current = selectedMedia.url
+    }
+  }, [selectedMedia?.url, originalVideoUrl])
 
   // Auto-backup every 5 minutes
   useEffect(() => {
@@ -719,8 +741,8 @@ export default function DashboardPage() {
                   {selectedMedia.type === 'video' ? (
                     <>
                       <ReactPlayer
-                        key={`video-${videoKey}-${selectedMedia.url?.split('?')[0]?.substring(selectedMedia.url.length - 30)}`}
-                        url={selectedMedia.url}
+                        key={`video-${videoKey}-${selectedMedia.url?.split('?')[0] || ''}`}
+                        url={selectedMedia.url ? `${selectedMedia.url}${selectedMedia.url.includes('?') ? '&' : '?'}_cb=${videoKey}&_nocache=1` : ''}
                         controls
                         width="100%"
                         height="auto"
@@ -1002,16 +1024,18 @@ export default function DashboardPage() {
                 // This ensures the old video element is destroyed before new one is created
                 const newVideoKey = videoKey + 1
                 console.log('🔄 Dashboard: Incrementing videoKey from', videoKey, 'to', newVideoKey)
-                setVideoKey(newVideoKey)
                 
-                // Small delay to ensure ReactPlayer unmounts before updating URL
-                // This prevents ReactPlayer from reusing cached video element
-                await new Promise(resolve => setTimeout(resolve, 50))
-                
-                // Then update the URL - ReactPlayer will remount with new key and new URL
+                // Update state in the correct order to force ReactPlayer remount
+                // First update the URL, then update the key to trigger remount
                 setMediaItems(updated)
                 setSelectedMedia({ ...selectedMedia, url })
                 setLastProcessedUrl(url) // Track last processed URL
+                
+                // Small delay to ensure state updates propagate
+                await new Promise(resolve => setTimeout(resolve, 10))
+                
+                // Then update videoKey to force ReactPlayer to remount with new URL
+                setVideoKey(newVideoKey)
                 
                 console.log('✅ Dashboard: State updated! Video key:', newVideoKey)
                 console.log('✅ Dashboard: New URL set:', url)
