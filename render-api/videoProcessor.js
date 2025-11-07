@@ -76,26 +76,108 @@ class VideoProcessor {
    * Apply visual effects
    */
   applyEffect(command, params) {
-    const { preset, startTime, endTime } = params
+    const { preset, startTime, endTime, intensity = 0.5 } = params
     let filter = ''
+    
+    // Normalize intensity (0-1) to filter strength
+    const intensityMultiplier = Math.max(0.1, Math.min(1.0, intensity || 0.5))
     
     switch (preset?.toLowerCase()) {
       case 'glow':
-        filter = 'curves=preset=strong_contrast:eq=gamma=1.2'
+      case 'dreamy glow':
+        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.3}`
         break
       case 'blur':
-        filter = 'boxblur=2:1'
+        const blurAmount = Math.round(2 + intensityMultiplier * 8)
+        filter = `boxblur=${blurAmount}:${blurAmount}`
         break
       case 'sharpen':
-        filter = 'unsharp=5:5:1.0:5:5:0.0'
+        const sharpenAmount = 3 + intensityMultiplier * 5
+        filter = `unsharp=${sharpenAmount}:${sharpenAmount}:1.0:5:5:0.0`
         break
       case 'vignette':
-        filter = 'vignette=PI/4'
+        filter = `vignette=PI/${4 - intensityMultiplier * 2}`
+        break
+      case 'vhs':
+      case 'vhs effect':
+        // VHS effect: noise, scanlines, color shift
+        filter = `noise=alls=${intensityMultiplier * 20}:allf=t+u,curves=preset=strong_contrast:eq=saturation=0.8`
+        break
+      case 'motion':
+      case 'motion blur':
+        const motionAmount = Math.round(5 + intensityMultiplier * 15)
+        filter = `minterpolate=fps=30:mi_mode=mci:mc_mode=aobmc:vsbmc=1`
+        break
+      case 'film grain':
+      case 'grain':
+        filter = `noise=alls=${intensityMultiplier * 15}:allf=t+u`
+        break
+      case 'lens flare':
+        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.2}:eq=saturation=${1.0 + intensityMultiplier * 0.3}`
+        break
+      case 'bokeh':
+        filter = `boxblur=${Math.round(10 + intensityMultiplier * 20)}:${Math.round(10 + intensityMultiplier * 20)}:luma_radius=${Math.round(5 + intensityMultiplier * 10)}`
+        break
+      case 'light leak':
+        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.4}:eq=saturation=${1.0 + intensityMultiplier * 0.2}`
+        break
+      case 'pixelate':
+        const pixelSize = Math.round(10 - intensityMultiplier * 8)
+        filter = `scale=iw/${pixelSize}:ih/${pixelSize},scale=iw*${pixelSize}:ih*${pixelSize}:flags=neighbor`
+        break
+      case 'distortion':
+        filter = `lenscorrection=k1=${-0.1 * intensityMultiplier}:k2=${-0.05 * intensityMultiplier}`
+        break
+      case 'chromatic aberration':
+        filter = `split[original][copy];[copy]scale=iw*1.01:ih*1.01[scaled];[original][scaled]blend=all_mode=addition:all_opacity=${intensityMultiplier * 0.3}`
+        break
+      case 'shake':
+        // Shake effect using random displacement
+        filter = `crop=iw-${Math.round(10 * intensityMultiplier)}:ih-${Math.round(10 * intensityMultiplier)}:random(1)*${Math.round(20 * intensityMultiplier)}:random(1)*${Math.round(20 * intensityMultiplier)}`
+        break
+      case 'sparkle':
+        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.3}:eq=saturation=${1.0 + intensityMultiplier * 0.4}`
+        break
+      case 'shadow pulse':
+        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 - intensityMultiplier * 0.2}`
+        break
+      case 'glitch flicker':
+        filter = `noise=alls=${intensityMultiplier * 10}:allf=t+u,curves=preset=strong_contrast`
+        break
+      case 'zoom-in pulse':
+        filter = `zoompan=z='if(lte(zoom,1.0),1.5,max(1.001,zoom-0.0015))':d=125:x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':s=iw*1.5:ih*1.5`
+        break
+      case 'soft focus':
+        filter = `boxblur=${Math.round(3 + intensityMultiplier * 5)}:${Math.round(3 + intensityMultiplier * 5)}`
+        break
+      case 'old film':
+      case 'oldfilm':
+        filter = `noise=alls=${intensityMultiplier * 25}:allf=t+u,curves=preset=vintage:eq=saturation=${0.5 + intensityMultiplier * 0.3}`
+        break
+      case 'dust overlay':
+        filter = `noise=alls=${intensityMultiplier * 15}:allf=t+u,curves=preset=vintage`
+        break
+      case 'light rays':
+        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.3}:eq=saturation=${1.0 + intensityMultiplier * 0.2}`
+        break
+      case 'mirror':
+        filter = `split[original][copy];[copy]hflip[flipped];[original][flipped]blend=all_mode=addition:all_opacity=${0.3 + intensityMultiplier * 0.4}`
+        break
+      case 'tilt shift':
+        filter = `boxblur=${Math.round(5 + intensityMultiplier * 10)}:${Math.round(5 + intensityMultiplier * 10)}:luma_radius=${Math.round(3 + intensityMultiplier * 7)}`
+        break
+      case 'fisheye':
+        filter = `lenscorrection=k1=${-0.3 * intensityMultiplier}:k2=${-0.15 * intensityMultiplier}`
+        break
+      case 'bloom':
+        filter = `boxblur=${Math.round(8 + intensityMultiplier * 12)}:${Math.round(8 + intensityMultiplier * 12)},curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.2}`
         break
       default:
+        // Default fallback for unknown effects
         filter = 'curves=preset=medium_contrast'
     }
     
+    // Apply time-based filter wrapper if time range specified
     if (startTime !== undefined || endTime !== undefined) {
       filter = this.applyTimeBasedFilter(filter, startTime, endTime)
     }
