@@ -1067,17 +1067,12 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json(responseData)
   } catch (error) {
-    const errorResponse = handleApiError(error, {
-      endpoint: '/api/via',
-      method: 'POST',
-    })
-    
-    return NextResponse.json(errorResponse.body, {
-      status: errorResponse.status,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    })
+    console.error('❌ VIA processing error:', error)
+    return NextResponse.json({
+      success: false,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+    }, { status: 500 })
   }
 }
 
