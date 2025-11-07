@@ -919,8 +919,9 @@ export default function DashboardPage() {
                                         setVideoKey(prev => prev + 1)
                                       }, 2000) // 2 second delay between retries
                                     } else {
-                                      console.error('❌ Max retries reached for video load. Video may be unavailable.')
-                                      (window as any).videoRetryCount = 0 // Reset for next video
+                                      const errorMsg = '❌ Max retries reached for video load. Video may be unavailable.'
+                                      console.error(errorMsg)
+                                      ;(window as any).videoRetryCount = 0 // Reset for next video
                                     }
                                   }
                                 } catch (logError) {
