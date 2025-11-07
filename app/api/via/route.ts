@@ -87,8 +87,11 @@ NOTE: This operation only works with videos (requires audio). For images, use cu
 ✨ EFFECTS (operation: "applyEffect"):
 Blur, Glow, VHS, Motion, Film Grain, Lens Flare, Bokeh, Light Leak, Pixelate, Distortion, Chromatic Aberration, Shake, Sparkle, Shadow Pulse, Dreamy Glow, Glitch Flicker, Zoom-In Pulse, Soft Focus, Old Film, Dust Overlay, Light Rays, Mirror, Tilt Shift, Fisheye, Bloom
 ⏰ TIME-BASED EFFECTS: You can apply effects to specific time ranges by adding "startTime" and "endTime" params (in seconds)
+CRITICAL: When user specifies a time range (e.g., "from 3 to 6 seconds", "from 3-6 seconds", "between 3 and 6 seconds"), you MUST include both startTime and endTime in the params.
 Example: "Apply blur from 3 to 5 seconds" → {"operation": "applyEffect", "params": {"preset": "blur", "startTime": 3, "endTime": 5}}
+Example: "Add blur effects from 3-6seconds" → {"operation": "applyEffect", "params": {"preset": "blur", "startTime": 3, "endTime": 6}}
 Example: "Add blur effect starting from 10 seconds" → {"operation": "applyEffect", "params": {"preset": "blur", "startTime": 10}}
+Example: "Blur from 2s to 8s" → {"operation": "applyEffect", "params": {"preset": "blur", "startTime": 2, "endTime": 8}}
 
 🎬 TRANSITIONS (operation: "addTransition"):
 Fade, Slide, Wipe, Zoom, Cross Dissolve, Blur In/Out, Spin, Morph Cut, Split Reveal, Flash, Zoom Blur, Cube Rotate, 3D Flip, Warp, Ripple, Glitch Transition, Luma Fade, Light Sweep, Stretch Pull, Film Roll, Page Turn, Diagonal Wipe, Motion Blur Transition, Cinematic Cut
@@ -787,6 +790,9 @@ export async function POST(request: NextRequest) {
       
       // Operations that need FFmpeg (but captions handled on Vercel due to Whisper API)
       // CRITICAL: Include filter and colorGrade operations to use Render API for better quality
+      // Check if operation needs FFmpeg (Render API)
+      // CRITICAL: Time-based effects (with startTime/endTime) MUST use FFmpeg
+      const hasTimeRange = instruction.params?.startTime !== undefined || instruction.params?.endTime !== undefined
       const needsFFmpeg = [
         'addMusic', 
         'merge', 
@@ -799,13 +805,16 @@ export async function POST(request: NextRequest) {
         'applyEffect', // Include effects for Render API
         'addText', // Include text overlays for Render API
         'customText', // Include custom text for Render API
-      ].includes(instruction.operation)
+      ].includes(instruction.operation) || hasTimeRange // Force FFmpeg if time-based
       const isCaptions = instruction.operation === 'addCaptions' || instruction.operation === 'customSubtitle'
       
       // Captions can be processed on Render API too (after Whisper transcription on Vercel)
       // The captions array is already generated, so we can send it to Render for FFmpeg processing
       if (needsFFmpeg && RENDER_API_URL) {
         console.log(`🌐 Using Render API for FFmpeg operation: ${instruction.operation}`)
+        if (hasTimeRange) {
+          console.log(`⏰ Time-based operation detected: startTime=${instruction.params?.startTime}, endTime=${instruction.params?.endTime}`)
+        }
         console.log(`🌐 Render API URL: ${RENDER_API_URL}`)
         console.log(`🌐 Input video URL: ${inputVideoUrl}`)
         try {
