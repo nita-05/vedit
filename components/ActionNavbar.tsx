@@ -202,12 +202,12 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
     window.addEventListener('resize', updatePosition)
     updatePosition() // Initial position
     
-    return () => {
-      if (rafId) cancelAnimationFrame(rafId)
-      window.removeEventListener('scroll', updatePosition, true)
-      window.removeEventListener('resize', updatePosition)
-    }
-  }, [activePanel, panelPosition])
+      return () => {
+        if (rafId) cancelAnimationFrame(rafId)
+        window.removeEventListener('scroll', updatePosition, true)
+        window.removeEventListener('resize', updatePosition)
+      }
+    }, [activePanel]) // Removed panelPosition from deps to prevent infinite loops
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
