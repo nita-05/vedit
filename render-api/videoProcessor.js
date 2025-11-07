@@ -522,6 +522,89 @@ class VideoProcessor {
           break
         }
         
+        case 'addTransition': {
+          const { preset = 'fade', duration = 1.0, startTime, endTime } = instruction.params
+          console.log(`🎬 Adding transition: ${preset} (duration: ${duration}s)`)
+          
+          // Apply transition effect based on preset
+          let transitionFilter = ''
+          switch (preset?.toLowerCase()) {
+            case 'fade':
+            case 'fade in':
+            case 'fade out':
+              // Fade in/out effect
+              if (startTime !== undefined && endTime !== undefined) {
+                const fadeDuration = Math.min(duration, (endTime - startTime) / 2)
+                transitionFilter = `fade=t=in:st=${startTime}:d=${fadeDuration},fade=t=out:st=${endTime - fadeDuration}:d=${fadeDuration}`
+              } else {
+                transitionFilter = `fade=t=in:st=0:d=${duration},fade=t=out:st=*:d=${duration}`
+              }
+              break
+            case 'cross dissolve':
+            case 'dissolve':
+              // Cross dissolve (blend)
+              transitionFilter = `fade=t=in:st=0:d=${duration}`
+              break
+            case 'blur in':
+            case 'blur out':
+              // Blur transition
+              if (startTime !== undefined && endTime !== undefined) {
+                transitionFilter = `boxblur=enable='between(t,${startTime},${startTime + duration})':luma_radius=10:chroma_radius=10`
+              } else {
+                transitionFilter = `boxblur=enable='between(t,0,${duration})':luma_radius=10:chroma_radius=10`
+              }
+              break
+            case 'zoom':
+            case 'zoom in':
+            case 'zoom out':
+              // Zoom transition
+              const zoomFactor = preset.toLowerCase().includes('out') ? 0.8 : 1.2
+              if (startTime !== undefined && endTime !== undefined) {
+                const zoomDuration = Math.min(duration, (endTime - startTime))
+                transitionFilter = `scale=iw*${zoomFactor}:ih*${zoomFactor}:enable='between(t,${startTime},${startTime + zoomDuration})'`
+              } else {
+                transitionFilter = `scale=iw*${zoomFactor}:ih*${zoomFactor}:enable='between(t,0,${duration})'`
+              }
+              break
+            case 'slide':
+              // Slide transition (horizontal movement)
+              transitionFilter = `crop=iw:ih:iw*${duration}:0`
+              break
+            default:
+              // Default to fade
+              transitionFilter = `fade=t=in:st=0:d=${duration},fade=t=out:st=*:d=${duration}`
+          }
+          
+          if (transitionFilter) {
+            command = command.videoFilters(transitionFilter)
+          }
+          break
+        }
+        
+        case 'addMusic': {
+          const { preset, volume = 0.3, startTime, endTime, loop = false } = instruction.params
+          console.log(`🎵 Adding music: ${preset || 'default'} (volume: ${volume})`)
+          
+          // Note: For now, we'll add a placeholder audio filter
+          // In a full implementation, you would download the music file and mix it
+          // For now, we'll apply audio effects to simulate music addition
+          // This is a simplified version - full implementation would require:
+          // 1. Download music file from a library
+          // 2. Mix it with existing audio using amix filter
+          
+          // Apply audio normalization and volume adjustment to simulate music mixing
+          let audioFilter = `volume=${volume}`
+          
+          // If there's a time range, apply it
+          if (startTime !== undefined && endTime !== undefined) {
+            audioFilter = `volume=${volume}:enable='between(t,${startTime},${endTime})'`
+          }
+          
+          command = command.audioFilters(audioFilter)
+          console.log(`⚠️ Note: Full music implementation requires music file library. Currently applying audio effects.`)
+          break
+        }
+        
         default:
           console.warn(`⚠️ Unknown operation: ${instruction.operation}`)
           // Pass through without modification
