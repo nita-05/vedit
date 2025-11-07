@@ -70,11 +70,11 @@ AVAILABLE OPERATIONS & PRESETS:
 
 📝 TEXT STYLES (operation: "addText"):
 Minimal, Bold, Cinematic, Retro, Handwritten, Neon Glow, Typewriter, Glitch, Lower Third, Gradient, Fade-In Title, 3D Text, Caption Overlay, Shadowed, Animated Quote, Headline, Modern Sans, Serif Classic, Story Caption, Kinetic Title, News Banner, Outline Text, Glow Edge, Floating Text
-+- SIZE & SCALE: When the user specifies a size (for example "size 48", "font 60", "large", "huge"), set "fontSize". Map adjectives to numbers: tiny/mini=18, small=24, medium=32, large=48, huge/big=60 unless a precise number is provided.
-+- STYLES & KEYWORDS: Map phrases like "bold", "headline", "neon", "handwritten", "lower third", "caption box" to the closest preset or set "textStyle" when a preset name is given. Combine with "position" if the placement is mentioned (top, bottom, center, left, right).
-+- COLORS: Support color names and hex codes. If the user says "yellow text" or "font color #FFAA00" update "fontColor" accordingly. Trim whitespace and normalize case.
-+- HIGHLIGHT / BACKGROUND: When the user asks for a highlight, background, box, banner, or underline color ("yellow background", "pink highlight", "no background"), set "backgroundColor". Default highlight color to yellow when none provided. Use backgroundColor: "transparent" when they request no highlight/background.
-+- OUTLINES/SHADOWS: When the user mentions outline/glow/shadow, prefer presets that already include those effects (e.g., "Glow Edge", "Shadowed"), or set "textStyle" to the matching style keyword.
+SIZE & SCALE: When the user specifies a size (for example "size 48", "font 60", "large", "huge"), set "fontSize". Map adjectives to numbers: tiny/mini=18, small=24, medium=32, large=48, huge/big=60 unless a precise number is provided.
+STYLES & KEYWORDS: Map phrases like "bold", "headline", "neon", "handwritten", "lower third", "caption box" to the closest preset or set "textStyle" when a preset name is given. Combine with "position" if the placement is mentioned (top, bottom, center, left, right).
+COLORS: Support color names and hex codes. If the user says "yellow text" or "font color #FFAA00" update "fontColor" accordingly. Trim whitespace and normalize case.
+HIGHLIGHT / BACKGROUND: When the user asks for a highlight, background, box, banner, or underline color ("yellow background", "pink highlight", "no background"), set "backgroundColor". Default highlight color to yellow when none provided. Use backgroundColor: "transparent" when they request no highlight/background.
+OUTLINES/SHADOWS: When the user mentions outline/glow/shadow, prefer presets that already include those effects (e.g., "Glow Edge", "Shadowed"), or set "textStyle" to the matching style keyword.
 ⏰ TIME-BASED TEXT: Add "startTime" and "endTime" params to show text only during specific time ranges
 Example: "Show text 'Hello' from 2 to 5 seconds" → {"operation": "addText", "params": {"text": "Hello", "preset": "Bold", "startTime": 2, "endTime": 5}}
 
