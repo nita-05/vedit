@@ -245,7 +245,10 @@ export default function DashboardPage() {
 
   const handleCommandProcessed = () => {
     console.log('🎬 Dashboard: Command processed, clearing externalCommand')
-    setExternalCommand('')
+    // Clear external command after a short delay to allow state update
+    setTimeout(() => {
+      setExternalCommand('')
+    }, 100)
   }
 
   const handleSave = async () => {
@@ -530,11 +533,36 @@ export default function DashboardPage() {
         videoUrl={selectedMedia?.url}
         onApplyTemplate={async (operations) => {
           // Apply template operations sequentially via VIA
-          for (const op of operations) {
-            const command = `${op.operation === 'colorGrade' ? 'Apply' : op.operation === 'applyEffect' ? 'Apply' : 'Add'} ${op.params.preset || op.params.text || ''} ${op.operation === 'addText' ? 'text' : op.operation === 'colorGrade' ? 'color grade' : 'effect'}`
-            setCommandToInput(command)
-            // Wait a bit between operations
-            await new Promise(resolve => setTimeout(resolve, 500))
+          console.log('🎨 Applying template with', operations.length, 'operations')
+          for (let i = 0; i < operations.length; i++) {
+            const op = operations[i]
+            let command = ''
+            
+            // Generate proper natural language commands
+            switch (op.operation) {
+              case 'colorGrade':
+                command = `Apply ${op.params.preset || 'Cinematic'} color grade to the video`
+                break
+              case 'applyEffect':
+                command = `Add ${op.params.preset || 'Glow'} effect to the video`
+                break
+              case 'addText':
+                command = `Apply ${op.params.preset || 'Bold'} text style "${op.params.text || 'Welcome'}" at ${op.params.position || 'center'}`
+                break
+              case 'addMusic':
+                command = `Add ${op.params.preset || 'Ambient'} background music to the video`
+                break
+              case 'addTransition':
+                command = `Apply ${op.params.preset || 'Fade'} transition between clips`
+                break
+              default:
+                command = `${op.operation === 'colorGrade' ? 'Apply' : op.operation === 'applyEffect' ? 'Apply' : 'Add'} ${op.params.preset || op.params.text || ''} ${op.operation === 'addText' ? 'text' : op.operation === 'colorGrade' ? 'color grade' : 'effect'}`
+            }
+            
+            console.log(`📤 Template operation ${i + 1}/${operations.length}: ${command}`)
+            setExternalCommand(command)
+            // Wait for processing to complete before next operation
+            await new Promise(resolve => setTimeout(resolve, 3000))
           }
         }}
       />
@@ -547,24 +575,26 @@ export default function DashboardPage() {
         videoUrl={selectedMedia?.url}
         onApplyEnhancements={async (operations) => {
           // Apply enhancements sequentially via VIA
-          for (const op of operations) {
+          console.log('🤖 Applying auto-enhancements with', operations.length, 'operations')
+          for (let i = 0; i < operations.length; i++) {
+            const op = operations[i]
             let command = ''
             
             switch (op.operation) {
               case 'colorGrade':
-                command = `Apply ${op.params.preset || 'cinematic'} color grade`
+                command = `Apply ${op.params.preset || 'Cinematic'} color grade to the video`
                 break
               case 'applyEffect':
-                command = `Apply ${op.params.preset || 'glow'} effect`
+                command = `Add ${op.params.preset || 'Glow'} effect to the video`
                 break
               case 'addMusic':
-                command = `Add ${op.params.preset || 'Ambient'} background music`
+                command = `Add ${op.params.preset || 'Ambient'} background music to the video`
                 break
               case 'addTransition':
-                command = `Apply ${op.params.preset || 'Fade'} transition`
+                command = `Apply ${op.params.preset || 'Fade'} transition between clips`
                 break
               case 'addText':
-                command = `Add ${op.params.preset || 'Bold'} text "${op.params.text || 'Welcome'}" at ${op.params.position || 'center'}`
+                command = `Apply ${op.params.preset || 'Bold'} text style "${op.params.text || 'Welcome'}" at ${op.params.position || 'center'}`
                 break
               case 'adjustSpeed':
                 command = `Set video speed to ${op.params.speed}x`
@@ -575,18 +605,19 @@ export default function DashboardPage() {
                   const change = value > 1 ? 'increase' : 'decrease'
                   command = `${change} saturation by ${Math.abs((value - 1) * 100).toFixed(0)}%`
                 } else if (op.params.type === 'noise reduction' || op.params.type === 'noise') {
-                  command = `Apply noise reduction filter`
+                  command = `Apply noise reduction filter to the video`
                 } else {
-                  command = `Apply ${op.params.type || 'filter'} filter`
+                  command = `Apply ${op.params.type || 'filter'} filter to the video`
                 }
                 break
               default:
-                command = `Apply ${op.params.preset || 'enhancement'}`
+                command = `Apply ${op.params.preset || 'enhancement'} to the video`
             }
             
-            setCommandToInput(command)
-            // Wait between operations to allow processing
-            await new Promise(resolve => setTimeout(resolve, 1000))
+            console.log(`📤 Auto-enhancement operation ${i + 1}/${operations.length}: ${command}`)
+            setExternalCommand(command)
+            // Wait for processing to complete before next operation (longer wait for video processing)
+            await new Promise(resolve => setTimeout(resolve, 4000))
           }
         }}
       />

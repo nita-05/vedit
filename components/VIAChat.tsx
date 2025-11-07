@@ -149,15 +149,19 @@ export default function VIAChat({ videoPublicId, videoUrl, mediaType = 'video', 
 
   // Handle external commands (auto-send mode)
   useEffect(() => {
-    if (externalCommand && externalCommand.trim()) {
+    if (externalCommand && externalCommand.trim() && !isLoading) {
       console.log('📥 VIAChat: externalCommand received:', externalCommand)
       if (handleSendRef.current) {
         handleSendRef.current(externalCommand).then(() => {
+          console.log('✅ VIAChat: externalCommand processed, calling onCommandProcessed')
           onCommandProcessed?.()
+        }).catch((error) => {
+          console.error('❌ VIAChat: externalCommand processing failed:', error)
+          onCommandProcessed?.() // Still call to clear command
         })
       }
     }
-  }, [externalCommand, onCommandProcessed])
+  }, [externalCommand, onCommandProcessed, isLoading])
 
   // Handle command to input (populate input field for editing)
   useEffect(() => {

@@ -416,7 +416,35 @@ MODIFYING EXISTING TEXT/SUBTITLES:
   * "in the minimal text add background" → {"operation": "customText", "params": {"text": "Minimal", "textStyle": "Minimal", "backgroundColor": "yellow", "position": "top"}}
   * "change bold text color" → {"operation": "customText", "params": {"preset": "Bold", "fontColor": "red", "position": "top"}}
 
-When interpreting commands, be specific about which preset is being requested and match it exactly from the available presets above. Always prioritize custom properties when user specifies them explicitly.`
+QUERY UNDERSTANDING - BE FLEXIBLE AND INTELLIGENT:
+- Understand variations in language: "make it look vintage" = "Apply Vintage color grade"
+- "add some blur" = "Add Blur effect"
+- "put text at top" = "Add text at top position"
+- "make it faster" = "Set video speed to 1.5x" or "adjustSpeed with speed > 1.0"
+- "slow it down" = "Set video speed to 0.5x" or "adjustSpeed with speed < 1.0"
+- "remove the part from X to Y" = "removeClip with startTime=X, endTime=Y"
+- "cut out X seconds" = "removeClip with appropriate time range"
+- "merge these clips" = "merge operation"
+- "combine videos" = "merge operation with videoUrls"
+- "apply template" = Process multiple operations from template
+- "auto enhance" = Apply suggested enhancements based on video analysis
+- "suggest features" = "analyzeVideo operation"
+- "what should I add?" = "analyzeVideo operation"
+- "make it look better" = "analyzeVideo" then apply suggestions
+- "improve the video" = "analyzeVideo" then apply auto-enhancements
+
+NATURAL LANGUAGE PATTERNS:
+- "I want to..." = User is requesting a feature, interpret the request
+- "Can you..." = Same as "I want to", be helpful
+- "Please..." = Polite request, process normally
+- "Make it..." = Usually color grading or effect
+- "Add..." = Usually adding text, effect, music, or transition
+- "Apply..." = Usually color grade, effect, or transition
+- "Remove..." = Usually removeClip or removeObject
+- "Change..." = Usually modifying existing element
+- "Set..." = Usually adjusting speed, position, or other settings
+
+When interpreting commands, be specific about which preset is being requested and match it exactly from the available presets above. Always prioritize custom properties when user specifies them explicitly. Be intelligent and flexible - understand user intent even if the exact wording doesn't match examples.`
 
 // Rate limiter - 20 requests per minute per user
 const rateLimiter = createRateLimiter(20, 60000)
