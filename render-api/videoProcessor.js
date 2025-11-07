@@ -363,7 +363,8 @@ class VideoProcessor {
     }
     
     const resolvedFontColor = this.normalizeDrawtextColor(color || 'white') || 'white'
-    let drawtextFilter = `drawtext=text='${escapedText}':fontsize=${fontSize || 24}:fontcolor=${resolvedFontColor}:x=${xPos}:y=${yPos}`
+    const resolvedFontSize = this.parseFontSize(fontSize || params.size || 36)
+    let drawtextFilter = `drawtext=text='${escapedText}':fontsize=${resolvedFontSize}:fontcolor=${resolvedFontColor}:x=${xPos}:y=${yPos}`
 
     if (backgroundColor && typeof backgroundColor === 'string') {
       const lower = backgroundColor.toLowerCase().trim()
