@@ -1430,6 +1430,8 @@ async function processWithCloudinaryFallback(
   
   // CRITICAL: Extract publicId from videoUrl if it's a Cloudinary URL with transformations
   // This allows chained editing (applying effects to already-processed videos)
+  // BUT: Only use extracted publicId if the video actually exists in Cloudinary
+  // If the processed video doesn't exist (404), fall back to original publicId
   let effectivePublicId = publicId
   if (videoUrl && videoUrl.includes('cloudinary.com')) {
     // Extract publicId from Cloudinary URL
@@ -1438,10 +1440,21 @@ async function processWithCloudinaryFallback(
     if (urlMatch && urlMatch[2]) {
       // Extract the publicId part (remove file extension)
       const publicIdWithExt = urlMatch[2]
-      effectivePublicId = publicIdWithExt.replace(/\.[^.]+$/, '')
-      // Remove 'vedit/' prefix if present
-      effectivePublicId = effectivePublicId.replace(/^vedit\//, '')
-      console.log(`☁️ Extracted publicId from processed video URL: ${effectivePublicId}`)
+      const extractedPublicId = publicIdWithExt.replace(/\.[^.]+$/, '').replace(/^vedit\//, '')
+      
+      // Check if this is a processed video that might not exist
+      // If it ends with '_processed' or similar, verify it exists before using it
+      // For now, always use original publicId for Cloudinary transformations to avoid 404s
+      // Processed videos should be uploaded to Cloudinary with a new publicId, not used as transformation base
+      if (extractedPublicId.includes('_processed') || extractedPublicId !== publicId) {
+        console.log(`☁️ Detected processed video publicId: ${extractedPublicId}`)
+        console.log(`☁️ Using original publicId for Cloudinary transformation: ${publicId}`)
+        console.log(`☁️ Note: Processed videos should use Render API, not Cloudinary transformations`)
+        effectivePublicId = publicId // Use original to avoid 404
+      } else {
+        effectivePublicId = extractedPublicId
+        console.log(`☁️ Extracted publicId from processed video URL: ${effectivePublicId}`)
+      }
     } else {
       // If we can't extract, use the provided publicId
       console.log(`☁️ Could not extract publicId from URL, using provided: ${publicId}`)

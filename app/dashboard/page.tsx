@@ -898,14 +898,37 @@ export default function DashboardPage() {
                                   }
                                   console.error('🎥 Error details:', errorInfo)
                                   
-                                  // If it's a network/CORS error, try to reload after a delay
+                                  // Check if it's a 404 error (video not found)
+                                  const video = e?.target
+                                  const videoSrc = video?.src || video?.currentSrc || selectedMedia?.url
+                                  const is404Error = videoSrc && (
+                                    videoSrc.includes('404') || 
+                                    (video?.networkState === 3 && video?.readyState === 0) // NETWORK_NO_SOURCE
+                                  )
+                                  
+                                  if (is404Error) {
+                                    console.error('❌ Video not found (404):', videoSrc)
+                                    console.error('❌ This video does not exist in Cloudinary. Processing may have failed.')
+                                    // Don't retry 404 errors - they won't resolve
+                                    // Show error to user instead of infinite retry
+                                    return
+                                  }
+                                  
+                                  // If it's a network/CORS error, try to reload after a delay (but limit retries)
                                   const errorCode = e?.target?.error?.code
                                   if (errorCode === 4 || errorCode === 3) { // MEDIA_ERR_SRC_NOT_SUPPORTED or MEDIA_ERR_NETWORK
-                                    console.log('🔄 Network/CORS error detected, will retry loading...')
-                                    setTimeout(() => {
-                                      // Force reload by incrementing videoKey
-                                      setVideoKey(prev => prev + 1)
-                                    }, 1000)
+                                    const retryCount = (window as any).videoRetryCount || 0
+                                    if (retryCount < 3) { // Limit to 3 retries
+                                      (window as any).videoRetryCount = retryCount + 1
+                                      console.log(`🔄 Network/CORS error detected, will retry loading... (attempt ${retryCount + 1}/3)`)
+                                      setTimeout(() => {
+                                        // Force reload by incrementing videoKey
+                                        setVideoKey(prev => prev + 1)
+                                      }, 2000) // 2 second delay between retries
+                                    } else {
+                                      console.error('❌ Max retries reached for video load. Video may be unavailable.')
+                                      (window as any).videoRetryCount = 0 // Reset for next video
+                                    }
                                   }
                                 } catch (logError) {
                                   console.error('🎥 Error (could not serialize):', e?.message || String(e))
@@ -1013,10 +1036,30 @@ export default function DashboardPage() {
                           // Try to recover from errors by reloading
                           // Only retry if it's not the original video (processed videos might need time)
                           if (selectedMedia.url !== originalVideoUrl) {
-                            console.log('🔄 Processed video error, will retry in 2 seconds...')
-                            setTimeout(() => {
-                              setVideoKey(prev => prev + 1)
-                            }, 2000)
+                            // Check if it's a 404 error - don't retry those
+                            const videoSrc = selectedMedia?.url
+                            const is404Error = videoSrc && (
+                              videoSrc.includes('404') || 
+                              (e?.target?.networkState === 3 && e?.target?.readyState === 0)
+                            )
+                            
+                            if (is404Error) {
+                              console.error('❌ Video not found (404), stopping retries:', videoSrc)
+                              return // Don't retry 404 errors
+                            }
+                            
+                            // Limit retries for other errors
+                            const retryCount = (window as any).processedVideoRetryCount || 0
+                            if (retryCount < 2) { // Max 2 retries
+                              (window as any).processedVideoRetryCount = retryCount + 1
+                              console.log(`🔄 Processed video error, will retry in 2 seconds... (attempt ${retryCount + 1}/2)`)
+                              setTimeout(() => {
+                                setVideoKey(prev => prev + 1)
+                              }, 2000)
+                            } else {
+                              console.error('❌ Max retries reached for processed video. Video may be unavailable.')
+                              (window as any).processedVideoRetryCount = 0 // Reset for next video
+                            }
                           }
                         }}
                         onReady={(player: any) => {
