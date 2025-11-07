@@ -974,12 +974,25 @@ async function processCaptionsGeneration(
     }
     
     // Download video for Whisper
+    console.log('📥 Downloading video for transcription:', inputVideoUrl)
     const response = await fetch(inputVideoUrl)
-    if (!response.ok) throw new Error('Failed to download video for transcription')
+    if (!response.ok) {
+      throw new Error(`Failed to download video for transcription: ${response.status} ${response.statusText}`)
+    }
+    
+    // Check content type
+    const contentType = response.headers.get('content-type') || ''
+    console.log(`📊 Video content type: ${contentType}`)
     
     // Transcribe audio using Whisper
     console.log('🎤 Transcribing audio with Whisper...')
     const arrayBuffer = await response.arrayBuffer()
+    
+    if (!arrayBuffer || arrayBuffer.byteLength === 0) {
+      throw new Error('Downloaded video is empty (0 bytes)')
+    }
+    
+    console.log(`📊 Downloaded video size: ${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)}MB`)
     
     // Save to temp file for Whisper API
     const tempDir = getTempDir()
