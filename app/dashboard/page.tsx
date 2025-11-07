@@ -275,7 +275,7 @@ export default function DashboardPage() {
       clearTimeout(sequenceCompletionTimeoutRef.current)
     }
     sequenceCompletionTimeoutRef.current = setTimeout(() => {
-      console.log(`⏱️ Sequence command timeout (fallback): ${command}`)
+      console.log(`⏱️ Sequence command timeout (fallback after 120s): ${command}`)
       if (pendingSequenceResolveRef.current) {
         pendingSequenceResolveRef.current()
         pendingSequenceResolveRef.current = null
@@ -284,7 +284,7 @@ export default function DashboardPage() {
       setTimeout(() => {
         processNextInQueue()
       }, 2000)
-    }, 45000) // 45 second timeout (generous for video processing)
+    }, 120000) // 120 second timeout to allow Render API operations to finish
   }
 
   // Add command to sequence queue

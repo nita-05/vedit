@@ -46,6 +46,41 @@ class VideoProcessor {
       .join(',')
   }
 
+  normalizeDrawtextColor(color, alpha = 1) {
+    if (!color) {
+      return null
+    }
+
+    const colorMap = {
+      white: 'white',
+      black: 'black',
+      yellow: 'yellow',
+      red: 'red',
+      blue: 'blue',
+      green: 'green',
+      orange: 'orange',
+      purple: 'purple',
+      pink: 'pink',
+      cyan: 'cyan',
+      magenta: 'magenta',
+      gray: 'gray',
+      grey: 'gray',
+    }
+
+    let base = color.toString().trim()
+    const mapped = colorMap[base.toLowerCase()]
+    if (mapped) {
+      base = mapped
+    } else if (base.startsWith('#') && base.length === 7) {
+      base = `0x${base.slice(1)}`
+    } else if (/^0x/i.test(base)) {
+      base = base.replace(/^0x/i, '0x')
+    }
+
+    const a = Math.max(0, Math.min(alpha ?? 1, 1))
+    return a < 1 ? `${base}@${a.toFixed(2)}` : base
+  }
+
   /**
    * Apply color grade
    */
@@ -244,7 +279,11 @@ class VideoProcessor {
    */
   addTextOverlay(command, params) {
     const { text, x, y, fontSize, color, startTime, endTime, position } = params
-    
+
+    const backgroundColor = params.backgroundColor || params.bgColor || (params.highlight ? (typeof params.highlight === 'string' ? params.highlight : 'yellow') : null)
+    const highlightOpacity = params.backgroundOpacity ?? params.highlightOpacity ?? 0.65
+    const boxBorderWidth = params.boxBorderWidth ?? params.boxBorder ?? 20
+
     // Escape special characters for drawtext
     const escapedText = text.replace(/:/g, '\\:').replace(/'/g, "\\'")
     
@@ -281,6 +320,16 @@ class VideoProcessor {
     }
     
     let drawtextFilter = `drawtext=text='${escapedText}':fontsize=${fontSize || 24}:fontcolor=${color || 'white'}:x=${xPos}:y=${yPos}`
+
+    if (backgroundColor && backgroundColor.toLowerCase() !== 'none' && backgroundColor.toLowerCase() !== 'transparent') {
+      const boxColor = this.normalizeDrawtextColor(backgroundColor, highlightOpacity)
+      if (boxColor) {
+        drawtextFilter += `:box=1:boxcolor=${boxColor}:boxborderw=${boxBorderWidth}`
+      }
+    } else if (params.highlight === true) {
+      const defaultBox = this.normalizeDrawtextColor('yellow', highlightOpacity)
+      drawtextFilter += `:box=1:boxcolor=${defaultBox}:boxborderw=${boxBorderWidth}`
+    }
     
     if (startTime !== undefined || endTime !== undefined) {
       drawtextFilter = this.applyTimeBasedFilter(drawtextFilter, startTime, endTime)
