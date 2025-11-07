@@ -194,6 +194,7 @@ export default function VIAProfilesModal({ isOpen, onClose, onSelectProfile }: V
           initial={{ scale: 0.9, opacity: 0 }}
           animate={{ scale: 1, opacity: 1 }}
           exit={{ scale: 0.9, opacity: 0 }}
+          onClick={(e) => e.stopPropagation()}
           className="relative w-full max-w-4xl max-h-[90vh] bg-[rgba(15,15,30,0.95)] backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl overflow-hidden flex flex-col"
         >
           {/* Header */}

@@ -802,7 +802,7 @@ export async function POST(request: NextRequest) {
           if (isFFmpegError) {
             console.log('🔄 FFmpeg failed, attempting Cloudinary fallback...')
             try {
-              processedUrl = await processWithCloudinaryFallback(videoPublicId, instruction, isImage)
+              processedUrl = await processWithCloudinaryFallback(videoPublicId, instruction, isImage, inputVideoUrl)
               console.log(`✅ Processed with Cloudinary fallback: ${processedUrl}`)
             } catch (cloudinaryError: any) {
               console.error('❌ Cloudinary fallback also failed:', cloudinaryError)
@@ -991,25 +991,53 @@ async function processCaptionsGeneration(
 /**
  * Process video/image edits using Cloudinary transformations as fallback
  * Works when FFmpeg is unavailable (e.g., on Vercel)
+ * 
+ * @param publicId - Original public ID (fallback if videoUrl not provided)
+ * @param instruction - Processing instruction
+ * @param isImage - Whether processing image or video
+ * @param videoUrl - Current processed video URL (for chained editing)
  */
 async function processWithCloudinaryFallback(
   publicId: string,
   instruction: any,
-  isImage: boolean = false
+  isImage: boolean = false,
+  videoUrl?: string
 ): Promise<string> {
   const resourceType = isImage ? 'image' : 'video'
   const operation = instruction.operation
   const params = instruction.params || {}
   
+  // CRITICAL: Extract publicId from videoUrl if it's a Cloudinary URL with transformations
+  // This allows chained editing (applying effects to already-processed videos)
+  let effectivePublicId = publicId
+  if (videoUrl && videoUrl.includes('cloudinary.com')) {
+    // Extract publicId from Cloudinary URL
+    // Format: https://res.cloudinary.com/cloud_name/resource_type/upload/transformations/publicId
+    const urlMatch = videoUrl.match(/\/upload\/([^\/]+\/)*([^\/\?]+)/)
+    if (urlMatch && urlMatch[2]) {
+      // Extract the publicId part (remove file extension)
+      const publicIdWithExt = urlMatch[2]
+      effectivePublicId = publicIdWithExt.replace(/\.[^.]+$/, '')
+      // Remove 'vedit/' prefix if present
+      effectivePublicId = effectivePublicId.replace(/^vedit\//, '')
+      console.log(`☁️ Extracted publicId from processed video URL: ${effectivePublicId}`)
+    } else {
+      // If we can't extract, use the provided publicId
+      console.log(`☁️ Could not extract publicId from URL, using provided: ${publicId}`)
+    }
+  }
+  
   console.log(`☁️ Processing with Cloudinary fallback: ${operation}`)
-  console.log(`☁️ Public ID: ${publicId}`)
+  console.log(`☁️ Public ID: ${effectivePublicId}`)
+  console.log(`☁️ Video URL provided: ${videoUrl ? 'Yes' : 'No'}`)
   console.log(`☁️ Params:`, JSON.stringify(params))
   
   // Map operations to Cloudinary transformations
+  // Use effectivePublicId (extracted from processed URL if available)
   switch (operation) {
     case 'colorGrade':
       const colorGradeUrl = CloudinaryTransformProcessor.applyColorGrade(
-        publicId,
+        effectivePublicId,
         params.preset || 'cinematic',
         resourceType
       )
@@ -1019,14 +1047,14 @@ async function processWithCloudinaryFallback(
     
     case 'applyEffect':
       return CloudinaryTransformProcessor.applyEffect(
-        publicId,
+        effectivePublicId,
         params.preset || 'glow',
         resourceType
       )
     
     case 'addText':
     case 'customText':
-      return CloudinaryTransformProcessor.addTextOverlay(publicId, {
+      return CloudinaryTransformProcessor.addTextOverlay(effectivePublicId, {
         text: params.text || 'Text',
         position: params.position || 'bottom',
         fontSize: params.fontSize || params.fontSize || 48,
@@ -1036,7 +1064,7 @@ async function processWithCloudinaryFallback(
       })
     
     case 'crop':
-      return CloudinaryTransformProcessor.crop(publicId, {
+      return CloudinaryTransformProcessor.crop(effectivePublicId, {
         x: params.x || 0,
         y: params.y || 0,
         width: params.width || 100,
@@ -1045,7 +1073,7 @@ async function processWithCloudinaryFallback(
     
     case 'rotate':
       return CloudinaryTransformProcessor.rotate(
-        publicId,
+        effectivePublicId,
         params.rotation || params.angle || 0,
         resourceType
       )
@@ -1054,7 +1082,7 @@ async function processWithCloudinaryFallback(
       // Cloudinary supports speed adjustment via video_transformation
       // Speed multiplier: 0.5 = slow, 1.0 = normal, 2.0 = fast
       const speed = params.speed || 1.0
-      return cloudinary.url(publicId, {
+      return cloudinary.url(effectivePublicId, {
         resource_type: resourceType,
         secure: true, // Force HTTPS to avoid mixed content issues
         transformation: [
@@ -1072,39 +1100,78 @@ async function processWithCloudinaryFallback(
       let filterUrl: string
       
       if (filterType === 'blur') {
-        filterUrl = cloudinary.url(publicId, {
+        filterUrl = cloudinary.url(effectivePublicId, {
           resource_type: resourceType,
           secure: true,
           transformation: [{ effect: 'blur:300' }],
         })
       } else if (filterType === 'sharpen') {
-        filterUrl = cloudinary.url(publicId, {
+        filterUrl = cloudinary.url(effectivePublicId, {
           resource_type: resourceType,
           secure: true,
           transformation: [{ effect: 'sharpen:100' }],
         })
       } else if (filterType === 'grayscale' || filterType === 'grayscale effect' || filterType === 'black & white') {
-        filterUrl = cloudinary.url(publicId, {
-          resource_type: resourceType,
-          secure: true,
-          transformation: [{ effect: 'grayscale' }],
-          // Ensure proper video format for streaming
-          ...(resourceType === 'video' ? { 
-            fetch_format: 'auto',
-            quality: 'auto',
-            // Force MP4 format for better compatibility
-            format: 'mp4'
-          } : {}),
-        })
-        // Remove existing query params and add fresh cache-busting
-        const cleanUrl = filterUrl.split('?')[0]
-        const timestamp = Date.now()
-        filterUrl = `${cleanUrl}?_t=${timestamp}`
-        console.log(`☁️ Generated grayscale URL with cache-bust: ${filterUrl}`)
+        // CRITICAL: If videoUrl is provided and has transformations, we need to chain them
+        // Extract existing transformations from videoUrl and add grayscale
+        if (videoUrl && videoUrl.includes('cloudinary.com') && videoUrl.includes('/upload/')) {
+          // Extract the transformation part from the URL
+          // Format: /upload/transformation1/transformation2/publicId
+          const uploadIndex = videoUrl.indexOf('/upload/')
+          if (uploadIndex !== -1) {
+            const afterUpload = videoUrl.substring(uploadIndex + '/upload/'.length)
+            // Find where the publicId starts (after transformations)
+            // Transformations are separated by slashes, publicId is the last part before query params
+            const parts = afterUpload.split('/')
+            const publicIdPart = parts[parts.length - 1].split('?')[0]
+            
+            // Reconstruct URL with existing transformations + grayscale
+            const beforePublicId = videoUrl.substring(0, videoUrl.lastIndexOf('/' + publicIdPart))
+            const baseUrl = beforePublicId + '/e_grayscale/' + publicIdPart.split('.')[0]
+            
+            // Add format and cache-busting
+            filterUrl = `${baseUrl}?f_auto,q_auto&_t=${Date.now()}`
+            console.log(`☁️ Chained grayscale transformation on processed video: ${filterUrl.substring(0, 100)}...`)
+          } else {
+            // Fallback to standard transformation
+            filterUrl = cloudinary.url(effectivePublicId, {
+              resource_type: resourceType,
+              secure: true,
+              transformation: [{ effect: 'grayscale' }],
+              ...(resourceType === 'video' ? { 
+                fetch_format: 'auto',
+                quality: 'auto',
+                format: 'mp4'
+              } : {}),
+            })
+            const cleanUrl = filterUrl.split('?')[0]
+            const timestamp = Date.now()
+            filterUrl = `${cleanUrl}?_t=${timestamp}`
+          }
+        } else {
+          // No existing transformations, apply grayscale directly
+          filterUrl = cloudinary.url(effectivePublicId, {
+            resource_type: resourceType,
+            secure: true,
+            transformation: [{ effect: 'grayscale' }],
+            // Ensure proper video format for streaming
+            ...(resourceType === 'video' ? { 
+              fetch_format: 'auto',
+              quality: 'auto',
+              // Force MP4 format for better compatibility
+              format: 'mp4'
+            } : {}),
+          })
+          // Remove existing query params and add fresh cache-busting
+          const cleanUrl = filterUrl.split('?')[0]
+          const timestamp = Date.now()
+          filterUrl = `${cleanUrl}?_t=${timestamp}`
+        }
+        console.log(`☁️ Generated grayscale URL with cache-bust: ${filterUrl.substring(0, 100)}...`)
       } else if (filterType === 'saturation') {
         const satValue = params.value || 1.0
         const saturation = Math.round((satValue - 1) * 100)
-        filterUrl = cloudinary.url(publicId, {
+        filterUrl = cloudinary.url(effectivePublicId, {
           resource_type: resourceType,
           secure: true,
           transformation: [{ saturation }],

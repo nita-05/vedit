@@ -638,11 +638,11 @@ export class VideoProcessor {
     // Ensure temp directory exists before processing
     this.ensureTempDir()
     
-    const inputPath = await this.downloadVideo(mediaUrl)
+    const inputPath = await this.downloadVideo(mediaUrl, isImage)
     console.log(`📥 Downloaded ${isImage ? 'image' : 'video'} to: ${inputPath}`)
     
     // Determine output format - keep images as images, videos as videos
-    const outputExt = isImage ? (inputPath.match(/\.(\w+)$/)?.[1] || 'png') : 'mp4'
+    const outputExt = isImage ? (inputPath.match(/\.(\w+)$/)?.[1] || 'jpg') : 'mp4'
     
     // On Vercel/Linux, construct path manually with forward slashes (avoid path.join)
     const outputPath = isVercelOrLinux()
@@ -1221,14 +1221,38 @@ export class VideoProcessor {
     })
   }
 
-  private async downloadVideo(url: string): Promise<string> {
+  private async downloadVideo(url: string, isImage: boolean = false): Promise<string> {
     const response = await fetch(url)
     if (!response.ok) throw new Error('Failed to download media')
 
     const buffer = Buffer.from(await response.arrayBuffer())
-    // Detect file extension from URL or use default
+    // Detect file extension from URL or use default based on media type
     const extMatch = url.match(/\.(\w+)(\?|$)/)
-    const ext = extMatch ? extMatch[1] : 'mp4'
+    let ext: string
+    if (extMatch) {
+      ext = extMatch[1]
+    } else {
+      // No extension in URL - use defaults based on media type
+      if (isImage) {
+        // For images, try to detect from Content-Type header
+        const contentType = response.headers.get('content-type') || ''
+        if (contentType.includes('jpeg') || contentType.includes('jpg')) {
+          ext = 'jpg'
+        } else if (contentType.includes('png')) {
+          ext = 'png'
+        } else if (contentType.includes('gif')) {
+          ext = 'gif'
+        } else if (contentType.includes('webp')) {
+          ext = 'webp'
+        } else {
+          // Default to jpg for images
+          ext = 'jpg'
+        }
+      } else {
+        // Default to mp4 for videos
+        ext = 'mp4'
+      }
+    }
     
     // On Vercel/Linux, construct path manually with forward slashes (avoid path.resolve/path.join)
     const inputPath = isVercelOrLinux()

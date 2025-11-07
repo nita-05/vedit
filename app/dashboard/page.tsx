@@ -90,54 +90,60 @@ export default function DashboardPage() {
   const lastUrlForCacheBustRef = useRef<string | null>(null)
   const cacheBustTimestampRef = useRef<number>(0)
   const videoElementRef = useRef<HTMLVideoElement | null>(null)
+  const lastReloadedUrlRef = useRef<string | null>(null) // Track last URL we reloaded for
   
-  // AGGRESSIVE: Force video element to reload when URL changes
+  // Only force video element to reload when URL actually changes (not on every render)
   useEffect(() => {
-    if (!selectedMedia || selectedMedia.type !== 'video' || !videoElementRef.current) return
+    if (!selectedMedia || selectedMedia.type !== 'video') return
     
-    const video = videoElementRef.current
     const expectedBaseUrl = selectedMedia.url?.split('?')[0]
-    const actualSrc = video.src || video.currentSrc
-    const actualBaseUrl = actualSrc?.split('?')[0]
     
-    // If video element has wrong URL or is showing cached content, force reload
-    if (expectedBaseUrl && actualBaseUrl && expectedBaseUrl !== actualBaseUrl) {
-      console.log('🔄 useEffect: Video URL mismatch detected, forcing reload...')
-      console.log('🔄 Expected:', expectedBaseUrl)
-      console.log('🔄 Actual:', actualBaseUrl)
-      
-      // Force reload by clearing and resetting
-      setTimeout(() => {
-        if (videoElementRef.current) {
-          try {
-            const currentTime = videoElementRef.current.currentTime
-            videoElementRef.current.pause()
-            videoElementRef.current.src = selectedMedia.url
-            videoElementRef.current.load()
-            // Try to restore playback position if video was playing
-            if (currentTime > 0) {
-              videoElementRef.current.currentTime = currentTime
+    // Reset reload tracking when URL actually changes (new video or new edit)
+    if (expectedBaseUrl && lastReloadedUrlRef.current !== expectedBaseUrl) {
+      // Only check for mismatch if we have a video element reference
+      if (videoElementRef.current) {
+        const video = videoElementRef.current
+        const actualSrc = video.src || video.currentSrc
+        const actualBaseUrl = actualSrc?.split('?')[0]
+        
+        // Only reload if URL actually mismatches
+        if (expectedBaseUrl && actualBaseUrl && expectedBaseUrl !== actualBaseUrl) {
+          console.log('🔄 useEffect: Video URL mismatch detected, forcing reload...')
+          console.log('🔄 Expected:', expectedBaseUrl)
+          console.log('🔄 Actual:', actualBaseUrl)
+          
+          // Mark this URL as reloaded to prevent infinite loop
+          lastReloadedUrlRef.current = expectedBaseUrl
+          
+          // Force reload by clearing and resetting
+          setTimeout(() => {
+            if (videoElementRef.current) {
+              try {
+                const currentTime = videoElementRef.current.currentTime
+                videoElementRef.current.pause()
+                videoElementRef.current.src = selectedMedia.url
+                videoElementRef.current.load()
+                // Try to restore playback position if video was playing
+                if (currentTime > 0) {
+                  videoElementRef.current.currentTime = currentTime
+                }
+                console.log('✅ useEffect: Video element reloaded with correct URL')
+              } catch (e) {
+                console.error('❌ useEffect: Error reloading video:', e)
+              }
             }
-            console.log('✅ useEffect: Video element reloaded with correct URL')
-          } catch (e) {
-            console.error('❌ useEffect: Error reloading video:', e)
-          }
+          }, 200)
+        } else {
+          // URL matches, just update the tracking ref
+          lastReloadedUrlRef.current = expectedBaseUrl
         }
-      }, 200)
-    } else if (expectedBaseUrl && actualBaseUrl && expectedBaseUrl === actualBaseUrl && selectedMedia.url !== originalVideoUrl) {
-      // URL is correct but might be showing cached frame - force a reload
-      console.log('🔄 useEffect: Forcing video reload to clear cached frame...')
-      setTimeout(() => {
-        if (videoElementRef.current) {
-          try {
-            videoElementRef.current.load()
-            console.log('✅ useEffect: Video reloaded to clear cache')
-          } catch (e) {
-            console.log('ℹ️ useEffect: Could not reload video:', e)
-          }
-        }
-      }, 300)
+      } else {
+        // No video element yet, just update tracking for when it loads
+        lastReloadedUrlRef.current = expectedBaseUrl
+      }
     }
+    // REMOVED: The aggressive reload for processed videos - this was causing infinite loops
+    // The video will load correctly with the cache-busting params in the URL
   }, [selectedMedia?.url, originalVideoUrl, selectedMedia?.type])
   
   useEffect(() => {
@@ -904,12 +910,14 @@ export default function DashboardPage() {
                                   console.log('📊 Video duration formatted:', `${Math.floor(newDuration / 60)}:${Math.floor(newDuration % 60).toString().padStart(2, '0')}`)
                                   console.log('📊 Is original video:', isOriginal)
                                   
-                                  // If video element loaded wrong URL, force reload
-                                  if (expectedBaseUrl && actualBaseUrl && expectedBaseUrl !== actualBaseUrl) {
+                                  // If video element loaded wrong URL, force reload (only once per URL)
+                                  if (expectedBaseUrl && actualBaseUrl && expectedBaseUrl !== actualBaseUrl && lastReloadedUrlRef.current !== expectedBaseUrl) {
                                     console.error('⚠️ WARNING: Video element loaded wrong URL!')
                                     console.error('⚠️ Expected:', expectedBaseUrl)
                                     console.error('⚠️ Actual:', actualBaseUrl)
                                     console.error('🔄 Forcing reload with correct URL...')
+                                    // Mark as reloaded to prevent infinite loop
+                                    lastReloadedUrlRef.current = expectedBaseUrl
                                     // Force reload by updating videoKey
                                     setTimeout(() => {
                                       setVideoKey(prev => prev + 1)
@@ -917,16 +925,8 @@ export default function DashboardPage() {
                                     return
                                   }
                                   
-                                  // AGGRESSIVE: Force video to reload if it's a processed video
-                                  // Sometimes browser shows cached frame even with correct src
-                                  if (!isOriginal && lastProcessedUrl && videoSrc) {
-                                    const processedBaseUrl = lastProcessedUrl.split('?')[0]
-                                    if (actualBaseUrl === processedBaseUrl) {
-                                      // URL is correct, but force a reload to clear any cached frame
-                                      console.log('🔄 Forcing video reload to clear cached frame...')
-                                      video.load() // Force reload
-                                    }
-                                  }
+                                  // REMOVED: Aggressive reload for processed videos - this was causing infinite loops
+                                  // The cache-busting params in the URL handle cache clearing properly
                                   
                                   // Store original video duration
                                   if (isOriginal && newDuration > 0) {
