@@ -111,7 +111,7 @@ class VideoProcessor {
         break
       case 'vintage':
       case 'retro':
-        filter = 'curves=preset=vintage:eq=saturation=0.7'
+        filter = 'curves=preset=vintage,eq=saturation=0.7'
         break
       case 'black & white':
       case 'grayscale':
@@ -165,7 +165,7 @@ class VideoProcessor {
     switch (preset?.toLowerCase()) {
       case 'glow':
       case 'dreamy glow':
-        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.3}`
+        filter = `curves=preset=strong_contrast,eq=gamma=${1.0 + intensityMultiplier * 0.3}`
         break
       case 'blur':
         const blurAmount = Math.round(2 + intensityMultiplier * 8)
@@ -181,7 +181,7 @@ class VideoProcessor {
       case 'vhs':
       case 'vhs effect':
         // VHS effect: noise, scanlines, color shift
-        filter = `noise=alls=${intensityMultiplier * 20}:allf=t+u,curves=preset=strong_contrast:eq=saturation=0.8`
+        filter = `noise=alls=${intensityMultiplier * 20}:allf=t+u,curves=preset=strong_contrast,eq=saturation=0.8`
         break
       case 'motion':
       case 'motion blur':
@@ -193,13 +193,13 @@ class VideoProcessor {
         filter = `noise=alls=${intensityMultiplier * 15}:allf=t+u`
         break
       case 'lens flare':
-        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.2}:eq=saturation=${1.0 + intensityMultiplier * 0.3}`
+        filter = `curves=preset=strong_contrast,eq=gamma=${1.0 + intensityMultiplier * 0.2},eq=saturation=${1.0 + intensityMultiplier * 0.3}`
         break
       case 'bokeh':
         filter = `boxblur=${Math.round(10 + intensityMultiplier * 20)}:${Math.round(10 + intensityMultiplier * 20)}:luma_radius=${Math.round(5 + intensityMultiplier * 10)}`
         break
       case 'light leak':
-        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.4}:eq=saturation=${1.0 + intensityMultiplier * 0.2}`
+        filter = `curves=preset=strong_contrast,eq=gamma=${1.0 + intensityMultiplier * 0.4},eq=saturation=${1.0 + intensityMultiplier * 0.2}`
         break
       case 'pixelate':
         const pixelSize = Math.round(10 - intensityMultiplier * 8)
@@ -216,10 +216,10 @@ class VideoProcessor {
         filter = `crop=iw-${Math.round(10 * intensityMultiplier)}:ih-${Math.round(10 * intensityMultiplier)}:random(1)*${Math.round(20 * intensityMultiplier)}:random(1)*${Math.round(20 * intensityMultiplier)}`
         break
       case 'sparkle':
-        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.3}:eq=saturation=${1.0 + intensityMultiplier * 0.4}`
+        filter = `curves=preset=strong_contrast,eq=gamma=${1.0 + intensityMultiplier * 0.3},eq=saturation=${1.0 + intensityMultiplier * 0.4}`
         break
       case 'shadow pulse':
-        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 - intensityMultiplier * 0.2}`
+        filter = `curves=preset=strong_contrast,eq=gamma=${1.0 - intensityMultiplier * 0.2}`
         break
       case 'glitch flicker':
         filter = `noise=alls=${intensityMultiplier * 10}:allf=t+u,curves=preset=strong_contrast`
@@ -232,13 +232,13 @@ class VideoProcessor {
         break
       case 'old film':
       case 'oldfilm':
-        filter = `noise=alls=${intensityMultiplier * 25}:allf=t+u,curves=preset=vintage:eq=saturation=${0.5 + intensityMultiplier * 0.3}`
+        filter = `noise=alls=${intensityMultiplier * 25}:allf=t+u,curves=preset=vintage,eq=saturation=${0.5 + intensityMultiplier * 0.3}`
         break
       case 'dust overlay':
         filter = `noise=alls=${intensityMultiplier * 15}:allf=t+u,curves=preset=vintage`
         break
       case 'light rays':
-        filter = `curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.3}:eq=saturation=${1.0 + intensityMultiplier * 0.2}`
+        filter = `curves=preset=strong_contrast,eq=gamma=${1.0 + intensityMultiplier * 0.3},eq=saturation=${1.0 + intensityMultiplier * 0.2}`
         break
       case 'mirror':
         filter = `split[original][copy];[copy]hflip[flipped];[original][flipped]blend=all_mode=addition:all_opacity=${0.3 + intensityMultiplier * 0.4}`
@@ -250,7 +250,7 @@ class VideoProcessor {
         filter = `lenscorrection=k1=${-0.3 * intensityMultiplier}:k2=${-0.15 * intensityMultiplier}`
         break
       case 'bloom':
-        filter = `boxblur=${Math.round(8 + intensityMultiplier * 12)}:${Math.round(8 + intensityMultiplier * 12)},curves=preset=strong_contrast:eq=gamma=${1.0 + intensityMultiplier * 0.2}`
+        filter = `boxblur=${Math.round(8 + intensityMultiplier * 12)}:${Math.round(8 + intensityMultiplier * 12)},curves=preset=strong_contrast,eq=gamma=${1.0 + intensityMultiplier * 0.2}`
         break
       default:
         // Default fallback for unknown effects
