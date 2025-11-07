@@ -1300,9 +1300,11 @@ async function processCaptionsGeneration(
     console.log('📊 Custom params:', customParams)
     
     // Check if we should use Render API for caption processing
+    // NOTE: Captions ALWAYS need FFmpeg, so Render API is required on Vercel
     const isCaptions = instruction.operation === 'addCaptions' || instruction.operation === 'customSubtitle'
     const needsFFmpeg = ['addCaptions', 'customSubtitle', 'addText', 'applyEffect', 'colorGrade', 'addTransition', 'addMusic', 'filter', 'trim', 'removeClip', 'merge', 'adjustSpeed', 'rotate', 'crop', 'removeObject', 'customText'].includes(instruction.operation)
     
+    // For captions, Render API is strongly recommended (required on Vercel)
     if (needsFFmpeg && RENDER_API_URL) {
       console.log(`🌐 Using Render API for caption processing: ${RENDER_API_URL}`)
       try {
@@ -1342,25 +1344,66 @@ async function processCaptionsGeneration(
       } catch (renderError: any) {
         if (renderError.name === 'AbortError') {
           console.error('❌ Render API timeout after 5 minutes')
+          throw new Error('Render API timeout: Caption processing took too long (5+ minutes). Please try with a shorter video or check Render API status.')
         } else {
           console.error('❌ Render API error:', renderError)
+          console.error('❌ Render API error details:', {
+            message: renderError.message,
+            status: renderError.status,
+            code: renderError.code,
+            stack: renderError.stack,
+          })
         }
-        console.log('🔄 Falling back to local videoProcessor for captions...')
-        // Fall through to local processing
+        
+        // On Vercel, local FFmpeg won't work, so don't fall back
+        // Only fall back to local processing if we're not on Vercel (check for Vercel environment)
+        const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV
+        if (isVercel) {
+          throw new Error(
+            `Caption processing failed: Render API error - ${renderError.message || 'Unknown error'}. ` +
+            `On Vercel, Render API is required for caption processing. Please check RENDER_API_URL configuration and Render API status.`
+          )
+        }
+        
+        console.log('🔄 Falling back to local videoProcessor for captions (not on Vercel)...')
+        // Fall through to local processing only if not on Vercel
+      }
+    } else {
+      // Render API not configured
+      const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV
+      if (isVercel) {
+        throw new Error(
+          `Caption processing failed: RENDER_API_URL is not configured. ` +
+          `On Vercel, Render API is required for caption processing. Please set RENDER_API_URL environment variable.`
+        )
       }
     }
     
-    // Use local videoProcessor (Vercel or local dev)
+    // Use local videoProcessor (only if not on Vercel)
     console.log('🔄 Using local videoProcessor for caption processing...')
-    const processedUrl = await videoProcessor.process(inputVideoUrl, instruction)
-    console.log(`✅ Captions processed locally: ${processedUrl}`)
-    return processedUrl
+    try {
+      const processedUrl = await videoProcessor.process(inputVideoUrl, instruction)
+      console.log(`✅ Captions processed locally: ${processedUrl}`)
+      return processedUrl
+    } catch (localError: any) {
+      console.error('❌ Local videoProcessor failed:', localError)
+      console.error('❌ Local error details:', {
+        message: localError.message,
+        stack: localError.stack,
+      })
+      throw new Error(
+        `Caption processing failed: Local FFmpeg processing error - ${localError.message || 'Unknown error'}. ` +
+        `Please check FFmpeg installation or configure RENDER_API_URL for remote processing.`
+      )
+    }
   } catch (error) {
     console.error('❌ Caption generation error:', error)
+    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace')
     // DO NOT return original video - throw error instead
     // This ensures the frontend knows processing failed and doesn't show original as processed
+    const errorMessage = error instanceof Error ? error.message : String(error)
     throw new Error(
-      `Caption generation failed: ${error instanceof Error ? error.message : 'Unknown error'}. ` +
+      `Caption generation failed: ${errorMessage}. ` +
       `Please check server logs for more details.`
     )
   }
