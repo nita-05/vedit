@@ -87,6 +87,8 @@ export default function DashboardPage() {
   const cacheBustTimestampRef = useRef<number>(0)
   const videoElementRef = useRef<HTMLVideoElement | null>(null)
   const lastReloadedUrlRef = useRef<string | null>(null) // Track last URL we reloaded for
+const pendingSequenceResolveRef = useRef<(() => void) | null>(null)
+const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   
   // Only force video element to reload when URL actually changes (not on every render)
   useEffect(() => {
@@ -248,9 +250,6 @@ export default function DashboardPage() {
   }
 
   // Track pending sequence completion
-  const pendingSequenceResolveRef = useRef<(() => void) | null>(null)
-  const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
-
   // Process next command in sequence queue
   const processNextInQueue = async () => {
     if (sequenceQueueRef.current.length === 0) {
