@@ -1005,12 +1005,31 @@ async function processCaptionsGeneration(
     let transcription: any
     try {
       const fileStream = fs.createReadStream(tempFilePath)
-      transcription = await openai.audio.transcriptions.create({
-        file: fileStream as any,
-        model: 'whisper-1',
-        response_format: 'verbose_json', // Get timestamps
-        timestamp_granularities: ['segment'], // Get segment-level timestamps
-      })
+      // Try verbose_json first for timestamps
+      try {
+        transcription = await openai.audio.transcriptions.create({
+          file: fileStream as any,
+          model: 'whisper-1',
+          response_format: 'verbose_json', // Get timestamps
+          timestamp_granularities: ['segment'], // Get segment-level timestamps
+        })
+        console.log('✅ Whisper API call successful with verbose_json format')
+      } catch (verboseError: any) {
+        // Fallback to regular text format if verbose_json fails
+        console.warn('⚠️ verbose_json format failed, trying text format:', verboseError.message)
+        const fileStream2 = fs.createReadStream(tempFilePath)
+        const textTranscription = await openai.audio.transcriptions.create({
+          file: fileStream2 as any,
+          model: 'whisper-1',
+          response_format: 'text',
+        })
+        // Convert text response to expected format
+        transcription = {
+          text: typeof textTranscription === 'string' ? textTranscription : (textTranscription as any).text || '',
+          segments: [], // No segments in text format
+        }
+        console.log('✅ Whisper API call successful with text format (fallback)')
+      }
     } catch (whisperError: any) {
       // Cleanup temp file before throwing
       try {
