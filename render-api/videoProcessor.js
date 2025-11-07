@@ -779,6 +779,39 @@ class VideoProcessor {
     return '&H00FFFFFF&'
   }
 
+  parseFloatValue(value, fallback = undefined) {
+    if (value === null || value === undefined) {
+      return fallback
+    }
+    if (typeof value === 'number' && Number.isFinite(value)) {
+      return value
+    }
+    if (typeof value === 'string') {
+      const trimmed = value.trim().toLowerCase()
+      if (trimmed === '') {
+        return fallback
+      }
+      const keywordMap = {
+        short: 0.5,
+        medium: 1.0,
+        long: 2.0,
+        longer: 3.0,
+        'extra long': 4.0
+      }
+      if (keywordMap[trimmed] !== undefined) {
+        return keywordMap[trimmed]
+      }
+      const numericMatch = trimmed.match(/([0-9]+(\.[0-9]+)?)/)
+      if (numericMatch) {
+        const numericValue = parseFloat(numericMatch[1])
+        if (Number.isFinite(numericValue)) {
+          return numericValue
+        }
+      }
+    }
+    return fallback
+  }
+
   /**
    * Process video with instruction
    */
@@ -968,10 +1001,17 @@ class VideoProcessor {
         }
         
         case 'addTransition': {
-          const { preset = 'fade', duration = 1.0, startTime, endTime } = instruction.params || {}
-          const safePreset = (preset || 'fade').toLowerCase()
-          const safeDuration = Math.max(0.1, Math.min(duration || 1.0, 10.0)) // Clamp between 0.1s and 10s
-          
+          const rawPreset = instruction.params?.preset
+          const rawDuration = instruction.params?.duration
+          const rawStart = instruction.params?.startTime
+          const rawEnd = instruction.params?.endTime
+
+          const safePreset = (rawPreset || 'fade').toLowerCase()
+          const durationValue = this.parseFloatValue(rawDuration, 1.0)
+          const startTime = this.parseFloatValue(rawStart)
+          const endTime = this.parseFloatValue(rawEnd)
+          const safeDuration = Math.max(0.1, Math.min(durationValue || 1.0, 10.0))
+
           console.log(`🎬 Adding transition: ${safePreset} (duration: ${safeDuration}s)`)
           
           // Apply transition effect based on preset
