@@ -1048,14 +1048,14 @@ class VideoProcessor {
             case 'zoom':
             case 'zoom in':
             case 'zoom out':
-              // Zoom transition
-              const zoomFactor = safePreset.includes('out') ? 0.8 : 1.2
-              if (startTime !== undefined && endTime !== undefined && endTime > startTime) {
-                const zoomDuration = Math.min(safeDuration, (endTime - startTime))
-                transitionFilter = `scale=iw*${zoomFactor}:ih*${zoomFactor}:enable='between(t,${startTime},${startTime + zoomDuration})'`
-              } else {
-                transitionFilter = `scale=iw*${zoomFactor}:ih*${zoomFactor}:enable='between(t,0,${safeDuration})'`
-              }
+              const zoomFactor = safePreset.includes('out') ? 0.9 : 1.15
+              const zoomStart = startTime !== undefined ? startTime : 0
+              const zoomDuration = Math.max(0.1, Math.min(endTime !== undefined && endTime > zoomStart ? endTime - zoomStart : safeDuration, 10.0))
+              const zoomEnd = zoomStart + zoomDuration
+
+              const scaleFilter = `scale=iw*${zoomFactor}:ih*${zoomFactor}:flags=lanczos:eval=frame:enable='between(t,${zoomStart},${zoomEnd})'`
+              const cropFilter = `crop=iw/${zoomFactor}:ih/${zoomFactor}:(iw-iw/${zoomFactor})/2:(ih-ih/${zoomFactor})/2:enable='between(t,${zoomStart},${zoomEnd})'`
+              transitionFilter = `${scaleFilter},${cropFilter}`
               break
             case 'slide':
             case 'slide in':
