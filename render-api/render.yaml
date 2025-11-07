@@ -2,8 +2,10 @@ services:
   - type: web
     name: vedit-render-api
     env: node
+    rootDir: render-api
     buildCommand: npm install
     startCommand: npm start
+    healthCheckPath: /health
     envVars:
       - key: NODE_ENV
         value: production

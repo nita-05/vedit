@@ -23,6 +23,7 @@
    - **Environment**: `Node`
    - **Build Command**: `npm install`
    - **Start Command**: `npm start`
+   - **Health Check Path**: `/health`
    - **Node Version**: `18` or `20`
 5. **Add Environment Variables:**
    ```
