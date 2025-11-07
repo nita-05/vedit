@@ -760,8 +760,9 @@ export async function POST(request: NextRequest) {
       ].includes(instruction.operation)
       const isCaptions = instruction.operation === 'addCaptions' || instruction.operation === 'customSubtitle'
       
-      // Skip Render for captions (handled on Vercel with Whisper)
-      if (needsFFmpeg && RENDER_API_URL && !isCaptions) {
+      // Captions can be processed on Render API too (after Whisper transcription on Vercel)
+      // The captions array is already generated, so we can send it to Render for FFmpeg processing
+      if (needsFFmpeg && RENDER_API_URL) {
         console.log(`🌐 Using Render API for FFmpeg operation: ${instruction.operation}`)
         console.log(`🌐 Render API URL: ${RENDER_API_URL}`)
         console.log(`🌐 Input video URL: ${inputVideoUrl}`)
@@ -978,9 +979,12 @@ async function processCaptionsGeneration(
     const tempFilePath = path.join(tempDir, `whisper_${Date.now()}.mp4`)
     fs.writeFileSync(tempFilePath, Buffer.from(arrayBuffer))
     
+    // Use Whisper with timestamped output for better accuracy
     const transcription = await openai.audio.transcriptions.create({
       file: fs.createReadStream(tempFilePath) as any,
       model: 'whisper-1',
+      response_format: 'verbose_json', // Get timestamps
+      timestamp_granularities: ['segment'], // Get segment-level timestamps
     })
     
     // Cleanup temp file
@@ -992,29 +996,86 @@ async function processCaptionsGeneration(
       console.error('Failed to cleanup temp file:', cleanupError)
     }
     
-    console.log('📝 Transcription complete:', transcription.text.substring(0, 100) + '...')
+    console.log('📝 Transcription complete:', transcription.text?.substring(0, 100) + '...')
+    console.log(`📊 Transcription segments: ${transcription.segments?.length || 0}`)
     
-    // Generate timed captions from transcript
-    console.log('⏰ Generating timed captions...')
-    const captionCompletion = await openai.chat.completions.create({
-      model: process.env.OPENAI_MODEL || 'gpt-4o',
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a caption generator. Return JSON with "captions" array: [{"text": "...", "start": 0, "end": 3}]'
-        },
-        {
-          role: 'user',
-          content: `Generate timed captions from this transcript: "${transcription.text}". Split into logical phrases of 2-5 seconds each. Style: ${style}. IMPORTANT: Return ONLY the caption text, NO markdown formatting (no **, no *, no #). Just plain text for each caption.`
-        },
-      ],
-      response_format: { type: 'json_object' },
-    })
+    // Generate timed captions from transcript with timestamps
+    let captions: any[] = []
+    
+    // If we have segments with timestamps, use them directly
+    if (transcription.segments && transcription.segments.length > 0) {
+      console.log('⏰ Using Whisper segment timestamps for captions...')
+      captions = transcription.segments.map((segment: any) => ({
+        text: (segment.text || '').trim(),
+        start: segment.start || 0,
+        end: segment.end || segment.start + 3,
+      }))
+      console.log(`✅ Generated ${captions.length} caption segments from Whisper timestamps`)
+    } else {
+      // Fallback: Generate timed captions using GPT if no segments
+      console.log('⏰ Generating timed captions with GPT (no Whisper segments)...')
+      const captionCompletion = await openai.chat.completions.create({
+        model: process.env.OPENAI_MODEL || 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a caption generator. Return JSON with "captions" array: [{"text": "...", "start": 0, "end": 3}]. Each caption should be 2-5 seconds long. Estimate timing based on text length (average 3 words per second).'
+          },
+          {
+            role: 'user',
+            content: `Generate timed captions from this transcript: "${transcription.text}". Split into logical phrases of 2-5 seconds each. IMPORTANT: Return ONLY the caption text, NO markdown formatting (no **, no *, no #). Just plain text for each caption.`
+          },
+        ],
+        response_format: { type: 'json_object' },
+      })
 
-    const captionData = JSON.parse(captionCompletion.choices[0].message.content || '{}')
-    const captions = Array.isArray(captionData.captions) ? captionData.captions : []
+      const captionData = JSON.parse(captionCompletion.choices[0].message.content || '{}')
+      captions = Array.isArray(captionData.captions) ? captionData.captions : []
+      
+      // If GPT didn't generate captions, create simple ones from transcript
+      if (captions.length === 0 && transcription.text) {
+        console.log('⚠️ GPT didn\'t generate captions, creating simple timed captions...')
+        const words = transcription.text.split(/\s+/)
+        const wordsPerSecond = 3 // Average speaking rate
+        let currentTime = 0
+        
+        // Split into chunks of ~9 words (3 seconds each)
+        for (let i = 0; i < words.length; i += 9) {
+          const chunk = words.slice(i, i + 9).join(' ')
+          const duration = chunk.split(/\s+/).length / wordsPerSecond
+          captions.push({
+            text: chunk,
+            start: currentTime,
+            end: currentTime + Math.max(duration, 2), // Minimum 2 seconds
+          })
+          currentTime += duration
+        }
+      }
+      
+      console.log(`✅ Generated ${captions.length} caption segments`)
+    }
     
-    console.log(`✅ Generated ${captions.length} caption segments`)
+    // Validate captions
+    if (!captions || captions.length === 0) {
+      throw new Error('Failed to generate captions from audio transcription')
+    }
+    
+    // Clean and validate each caption
+    captions = captions
+      .filter((cap: any) => cap.text && cap.text.trim().length > 0)
+      .map((cap: any) => ({
+        text: (cap.text || '').replace(/\*\*/g, '').replace(/\*/g, '').trim(),
+        start: Math.max(0, cap.start || 0),
+        end: Math.max(cap.start || 0, cap.end || (cap.start || 0) + 3),
+      }))
+    
+    if (captions.length === 0) {
+      throw new Error('No valid captions generated after cleaning')
+    }
+    
+    console.log(`✅ Final caption count: ${captions.length}`)
+    console.log(`📊 First caption: "${captions[0].text}" (${captions[0].start}s - ${captions[0].end}s)`)
+    console.log(`📊 Last caption: "${captions[captions.length - 1].text}" (${captions[captions.length - 1].start}s - ${captions[captions.length - 1].end}s)`)
     
     // Process video to add captions
     const instruction = {
