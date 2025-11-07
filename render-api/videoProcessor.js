@@ -547,14 +547,17 @@ class VideoProcessor {
       case 'neon glow':
         return {
           ...baseConfig,
-          fontColor: '#39ff14',
-          borderWidth: 3,
+          fontColor: '#7dfffa',
+          borderWidth: 6,
           borderColor: '#00bfff',
-          shadowColor: '#39ff14',
+          shadowColor: '#7dfffa',
           shadowX: 0,
           shadowY: 0,
-          backgroundColor: '#000000',
-          backgroundOpacity: 0.25
+          backgroundColor: '#001133',
+          backgroundOpacity: 0.35,
+          highlightColor: '#00ffc6',
+          defaultFontSize: 48,
+          extraOptions: ['alpha=1', 'line_spacing=10']
         }
       case 'typewriter':
         return {
