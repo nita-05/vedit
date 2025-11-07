@@ -70,11 +70,11 @@ AVAILABLE OPERATIONS & PRESETS:
 
 📝 TEXT STYLES (operation: "addText"):
 Minimal, Bold, Cinematic, Retro, Handwritten, Neon Glow, Typewriter, Glitch, Lower Third, Gradient, Fade-In Title, 3D Text, Caption Overlay, Shadowed, Animated Quote, Headline, Modern Sans, Serif Classic, Story Caption, Kinetic Title, News Banner, Outline Text, Glow Edge, Floating Text
-+- SIZE & SCALE: If the user specifies a size ("size 48", "font 60", "large", "huge"), set `fontSize`. Map adjectives → numbers: tiny/mini=18, small=24, medium=32, large=48, huge/big=60 unless a number is explicitly provided.
-+- STYLES & KEYWORDS: Map phrases like "bold", "headline", "neon", "handwritten", "lower third", "caption box" to the closest preset or set `textStyle` when a preset name is given. Combine with `position` if the placement is mentioned (top, bottom, center, left, right).
-+- COLORS: Support both color names and hex codes. If the user says "yellow text" or "font color #FFAA00" update `fontColor` accordingly. Trim whitespace and normalize case.
-+- HIGHLIGHT / BACKGROUND: If the user asks for a highlight, background, box, banner, or underline color ("yellow background", "pink highlight", "no background"), set `backgroundColor`. Default highlight color to yellow when none provided. Use `backgroundColor: 'transparent'` when they request no highlight/background.
-+- OUTLINES/SHADOWS: If the user mentions outline/glow/shadow, prefer presets that already include those effects (e.g., "Glow Edge", "Shadowed"), or set `textStyle` to the matching style keyword.
+- SIZE & SCALE: If the user specifies a size ("size 48", "font 60", "large", "huge"), set `fontSize`. Map adjectives to numbers: tiny/mini=18, small=24, medium=32, large=48, huge/big=60 unless a precise number is provided.
+- STYLES & KEYWORDS: Map phrases like "bold", "headline", "neon", "handwritten", "lower third", "caption box" to the closest preset or set `textStyle` when a preset name is given. Combine with `position` if the placement is mentioned (top, bottom, center, left, right).
+- COLORS: Support color names and hex codes. If the user says "yellow text" or "font color #FFAA00" update `fontColor` accordingly. Trim whitespace and normalize case.
+- HIGHLIGHT / BACKGROUND: If the user asks for a highlight, background, box, banner, or underline color ("yellow background", "pink highlight", "no background"), set `backgroundColor`. Default highlight color to yellow when none provided. Use `backgroundColor: 'transparent'` when they request no highlight/background.
+- OUTLINES/SHADOWS: If the user mentions outline/glow/shadow, prefer presets that already include those effects (e.g., "Glow Edge", "Shadowed"), or set `textStyle` to the matching style keyword.
 ⏰ TIME-BASED TEXT: Add "startTime" and "endTime" params to show text only during specific time ranges
 Example: "Show text 'Hello' from 2 to 5 seconds" → {"operation": "addText", "params": {"text": "Hello", "preset": "Bold", "startTime": 2, "endTime": 5}}
 
@@ -1213,9 +1213,28 @@ async function processCaptionsGeneration(
             console.log('✅ Whisper API call successful with text format (fallback)')
           }
         }
+      } catch (whisperError: any) {
+        // Cleanup temp file before throwing
+        try {
+          if (fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath)
+          }
+        } catch (cleanupError) {
+          console.error('Failed to cleanup temp file:', cleanupError)
+        }
+        
+        console.error('❌ Whisper API error:', whisperError)
+        console.error('❌ Error details:', {
+          message: whisperError.message,
+          status: whisperError.status,
+          code: whisperError.code,
+          type: whisperError.type,
+          response: whisperError.response,
+        })
+        throw new Error(`Whisper transcription failed: ${whisperError.message || 'Unknown error'}. Please check OpenAI API key and video file.`)
       }
-    } catch (whisperError: any) {
-      // Cleanup temp file before throwing
+      
+      // Cleanup temp file
       try {
         if (fs.existsSync(tempFilePath)) {
           fs.unlinkSync(tempFilePath)
@@ -1224,239 +1243,230 @@ async function processCaptionsGeneration(
         console.error('Failed to cleanup temp file:', cleanupError)
       }
       
-      console.error('❌ Whisper API error:', whisperError)
-      console.error('❌ Error details:', {
-        message: whisperError.message,
-        status: whisperError.status,
-        code: whisperError.code,
-        type: whisperError.type,
-        response: whisperError.response,
-      })
-      throw new Error(`Whisper transcription failed: ${whisperError.message || 'Unknown error'}. Please check OpenAI API key and video file.`)
-    }
-    
-    // Cleanup temp file
-    try {
-      if (fs.existsSync(tempFilePath)) {
-        fs.unlinkSync(tempFilePath)
-      }
-    } catch (cleanupError) {
-      console.error('Failed to cleanup temp file:', cleanupError)
-    }
-    
-    // Validate transcription response
-    if (!transcription) {
-      throw new Error('Whisper API returned empty response')
-    }
-    
-    if (!transcription.text && (!transcription.segments || transcription.segments.length === 0)) {
-      throw new Error('Whisper API returned no transcription text or segments')
-    }
-    
-    console.log('📝 Transcription complete:', transcription.text?.substring(0, 100) + '...')
-    console.log(`📊 Transcription segments: ${transcription.segments?.length || 0}`)
-    console.log(`📊 Transcription full response keys:`, Object.keys(transcription))
-    
-    // Generate timed captions from transcript with timestamps
-    let captions: any[] = []
-    
-    // If we have segments with timestamps, use them directly
-    if (transcription.segments && Array.isArray(transcription.segments) && transcription.segments.length > 0) {
-      console.log('⏰ Using Whisper segment timestamps for captions...')
-      captions = transcription.segments
-        .filter((segment: any) => segment && segment.text && segment.text.trim().length > 0)
-        .map((segment: any) => ({
-          text: (segment.text || '').trim(),
-          start: typeof segment.start === 'number' ? segment.start : 0,
-          end: typeof segment.end === 'number' ? segment.end : (typeof segment.start === 'number' ? segment.start + 3 : 3),
-        }))
-      console.log(`✅ Generated ${captions.length} caption segments from Whisper timestamps`)
-    } else if (transcription.text && transcription.text.trim().length > 0) {
-      // Fallback: Generate timed captions using GPT if no segments but we have text
-      console.log('⏰ Generating timed captions with GPT (no Whisper segments, but have text)...')
-      try {
-        const captionCompletion = await openai.chat.completions.create({
-          model: process.env.OPENAI_MODEL || 'gpt-4o',
-          messages: [
-            {
-              role: 'system',
-              content: 'You are a caption generator. Return JSON with "captions" array: [{"text": "...", "start": 0, "end": 3}]. Each caption should be 2-5 seconds long. Estimate timing based on text length (average 3 words per second).'
-            },
-            {
-              role: 'user',
-              content: `Generate timed captions from this transcript: "${transcription.text}". Split into logical phrases of 2-5 seconds each. IMPORTANT: Return ONLY the caption text, NO markdown formatting (no **, no *, no #). Just plain text for each caption.`
-            },
-          ],
-          response_format: { type: 'json_object' },
-        })
-
-        const captionData = JSON.parse(captionCompletion.choices[0].message.content || '{}')
-        captions = Array.isArray(captionData.captions) ? captionData.captions : []
-      } catch (gptError: any) {
-        console.error('⚠️ GPT caption generation failed:', gptError)
-        // Continue to fallback
+      // Validate transcription response
+      if (!transcription) {
+        throw new Error('Whisper API returned empty response')
       }
       
-      // If GPT didn't generate captions, create simple ones from transcript
-      if (captions.length === 0 && transcription.text) {
-        console.log('⚠️ GPT didn\'t generate captions, creating simple timed captions...')
-        const words = transcription.text.split(/\s+/).filter((w: string) => w.trim().length > 0)
-        if (words.length > 0) {
-          const wordsPerSecond = 3 // Average speaking rate
-          let currentTime = 0
-          
-          // Split into chunks of ~9 words (3 seconds each)
-          for (let i = 0; i < words.length; i += 9) {
-            const chunk = words.slice(i, i + 9).join(' ')
-            const duration = chunk.split(/\s+/).length / wordsPerSecond
-            captions.push({
-              text: chunk,
-              start: currentTime,
-              end: currentTime + Math.max(duration, 2), // Minimum 2 seconds
-            })
-            currentTime += duration
+      if (!transcription.text && (!transcription.segments || transcription.segments.length === 0)) {
+        throw new Error('Whisper API returned no transcription text or segments')
+      }
+      
+      console.log('📝 Transcription complete:', transcription.text?.substring(0, 100) + '...')
+      console.log(`📊 Transcription segments: ${transcription.segments?.length || 0}`)
+      console.log(`📊 Transcription full response keys:`, Object.keys(transcription))
+      
+      // Generate timed captions from transcript with timestamps
+      let captions: any[] = []
+      
+      // If we have segments with timestamps, use them directly
+      if (transcription.segments && Array.isArray(transcription.segments) && transcription.segments.length > 0) {
+        console.log('⏰ Using Whisper segment timestamps for captions...')
+        captions = transcription.segments
+          .filter((segment: any) => segment && segment.text && segment.text.trim().length > 0)
+          .map((segment: any) => ({
+            text: (segment.text || '').trim(),
+            start: typeof segment.start === 'number' ? segment.start : 0,
+            end: typeof segment.end === 'number' ? segment.end : (typeof segment.start === 'number' ? segment.start + 3 : 3),
+          }))
+        console.log(`✅ Generated ${captions.length} caption segments from Whisper timestamps`)
+      } else if (transcription.text && transcription.text.trim().length > 0) {
+        // Fallback: Generate timed captions using GPT if no segments but we have text
+        console.log('⏰ Generating timed captions with GPT (no Whisper segments, but have text)...')
+        try {
+          const captionCompletion = await openai.chat.completions.create({
+            model: process.env.OPENAI_MODEL || 'gpt-4o',
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a caption generator. Return JSON with "captions" array: [{"text": "...", "start": 0, "end": 3}]. Each caption should be 2-5 seconds long. Estimate timing based on text length (average 3 words per second).'
+              },
+              {
+                role: 'user',
+                content: `Generate timed captions from this transcript: "${transcription.text}". Split into logical phrases of 2-5 seconds each. IMPORTANT: Return ONLY the caption text, NO markdown formatting (no **, no *, no #). Just plain text for each caption.`
+              },
+            ],
+            response_format: { type: 'json_object' },
+          })
+
+          const captionData = JSON.parse(captionCompletion.choices[0].message.content || '{}')
+          captions = Array.isArray(captionData.captions) ? captionData.captions : []
+        } catch (gptError: any) {
+          console.error('⚠️ GPT caption generation failed:', gptError)
+          // Continue to fallback
+        }
+        
+        // If GPT didn't generate captions, create simple ones from transcript
+        if (captions.length === 0 && transcription.text) {
+          console.log('⚠️ GPT didn\'t generate captions, creating simple timed captions...')
+          const words = transcription.text.split(/\s+/).filter((w: string) => w.trim().length > 0)
+          if (words.length > 0) {
+            const wordsPerSecond = 3 // Average speaking rate
+            let currentTime = 0
+            
+            // Split into chunks of ~9 words (3 seconds each)
+            for (let i = 0; i < words.length; i += 9) {
+              const chunk = words.slice(i, i + 9).join(' ')
+              const duration = chunk.split(/\s+/).length / wordsPerSecond
+              captions.push({
+                text: chunk,
+                start: currentTime,
+                end: currentTime + Math.max(duration, 2), // Minimum 2 seconds
+              })
+              currentTime += duration
+            }
           }
         }
+        
+        console.log(`✅ Generated ${captions.length} caption segments`)
+      } else {
+        throw new Error('No transcription text or segments available from Whisper API')
       }
       
-      console.log(`✅ Generated ${captions.length} caption segments`)
-    } else {
-      throw new Error('No transcription text or segments available from Whisper API')
-    }
-    
-    // Validate captions
-    if (!captions || captions.length === 0) {
-      throw new Error('Failed to generate captions from audio transcription')
-    }
-    
-    // Clean and validate each caption
-    captions = captions
-      .filter((cap: any) => cap.text && cap.text.trim().length > 0)
-      .map((cap: any) => ({
-        text: (cap.text || '').replace(/\*\*/g, '').replace(/\*/g, '').trim(),
-        start: Math.max(0, cap.start || 0),
-        end: Math.max(cap.start || 0, cap.end || (cap.start || 0) + 3),
-      }))
-    
-    if (captions.length === 0) {
-      throw new Error('No valid captions generated after cleaning')
-    }
-    
-    console.log(`✅ Final caption count: ${captions.length}`)
-    console.log(`📊 First caption: "${captions[0].text}" (${captions[0].start}s - ${captions[0].end}s)`)
-    console.log(`📊 Last caption: "${captions[captions.length - 1].text}" (${captions[captions.length - 1].start}s - ${captions[captions.length - 1].end}s)`)
-    
-    // Process video to add captions
-    const instruction = {
-      operation: 'addCaptions',
-      params: {
-        captions,
-        style,
-        // Include custom subtitle parameters if provided
-        ...(customParams || {}),
-      },
-    }
-    
-    console.log('🎬 Processing video with captions...')
-    console.log('📊 Caption count:', captions.length)
-    console.log('📊 Style:', style)
-    console.log('📊 Custom params:', customParams)
-    
-    // Check if we should use Render API for caption processing
-    // NOTE: Captions ALWAYS need FFmpeg, so Render API is required on Vercel
-    const isCaptions = instruction.operation === 'addCaptions' || instruction.operation === 'customSubtitle'
-    const needsFFmpeg = ['addCaptions', 'customSubtitle', 'addText', 'applyEffect', 'colorGrade', 'addTransition', 'addMusic', 'filter', 'trim', 'removeClip', 'merge', 'adjustSpeed', 'rotate', 'crop', 'removeObject', 'customText'].includes(instruction.operation)
-    
-    // For captions, Render API is strongly recommended (required on Vercel)
-    if (needsFFmpeg && RENDER_API_URL) {
-      console.log(`🌐 Using Render API for caption processing: ${RENDER_API_URL}`)
-      try {
-        const requestBody: any = {
-          videoUrl: inputVideoUrl,
-          instruction,
-          publicId: publicId,
-        }
-        
-        const controller = new AbortController()
-        const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
-        
-        const renderResponse = await fetch(`${RENDER_API_URL}/process`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(requestBody),
-          signal: controller.signal,
-        })
-        
-        clearTimeout(timeoutId)
-        
-        if (!renderResponse.ok) {
-          const errorText = await renderResponse.text()
-          console.error(`❌ Render API error response: ${errorText}`)
-          throw new Error(`Render API error (${renderResponse.status}): ${renderResponse.statusText}`)
-        }
-        
-        const renderData = await renderResponse.json()
-        console.log(`📤 Render API response:`, JSON.stringify(renderData, null, 2))
-        
-        if (renderData.success && renderData.videoUrl) {
-          console.log(`✅ Processed captions via Render API: ${renderData.videoUrl}`)
-          return renderData.videoUrl
-        } else {
-          throw new Error(renderData.message || renderData.error || 'Render API processing failed')
-        }
-      } catch (renderError: any) {
-        if (renderError.name === 'AbortError') {
-          console.error('❌ Render API timeout after 5 minutes')
-          throw new Error('Render API timeout: Caption processing took too long (5+ minutes). Please try with a shorter video or check Render API status.')
-        } else {
-          console.error('❌ Render API error:', renderError)
-          console.error('❌ Render API error details:', {
-            message: renderError.message,
-            status: renderError.status,
-            code: renderError.code,
-            stack: renderError.stack,
+      // Validate captions
+      if (!captions || captions.length === 0) {
+        throw new Error('Failed to generate captions from audio transcription')
+      }
+      
+      // Clean and validate each caption
+      captions = captions
+        .filter((cap: any) => cap.text && cap.text.trim().length > 0)
+        .map((cap: any) => ({
+          text: (cap.text || '').replace(/\*\*/g, '').replace(/\*/g, '').trim(),
+          start: Math.max(0, cap.start || 0),
+          end: Math.max(cap.start || 0, cap.end || (cap.start || 0) + 3),
+        }))
+      
+      if (captions.length === 0) {
+        throw new Error('No valid captions generated after cleaning')
+      }
+      
+      console.log(`✅ Final caption count: ${captions.length}`)
+      console.log(`📊 First caption: "${captions[0].text}" (${captions[0].start}s - ${captions[0].end}s)`)
+      console.log(`📊 Last caption: "${captions[captions.length - 1].text}" (${captions[captions.length - 1].start}s - ${captions[captions.length - 1].end}s)`)
+      
+      // Process video to add captions
+      const instruction = {
+        operation: 'addCaptions',
+        params: {
+          captions,
+          style,
+          // Include custom subtitle parameters if provided
+          ...(customParams || {}),
+        },
+      }
+      
+      console.log('🎬 Processing video with captions...')
+      console.log('📊 Caption count:', captions.length)
+      console.log('📊 Style:', style)
+      console.log('📊 Custom params:', customParams)
+      
+      // Check if we should use Render API for caption processing
+      // NOTE: Captions ALWAYS need FFmpeg, so Render API is required on Vercel
+      const isCaptions = instruction.operation === 'addCaptions' || instruction.operation === 'customSubtitle'
+      const needsFFmpeg = ['addCaptions', 'customSubtitle', 'addText', 'applyEffect', 'colorGrade', 'addTransition', 'addMusic', 'filter', 'trim', 'removeClip', 'merge', 'adjustSpeed', 'rotate', 'crop', 'removeObject', 'customText'].includes(instruction.operation)
+      
+      // For captions, Render API is strongly recommended (required on Vercel)
+      if (needsFFmpeg && RENDER_API_URL) {
+        console.log(`🌐 Using Render API for caption processing: ${RENDER_API_URL}`)
+        try {
+          const requestBody: any = {
+            videoUrl: inputVideoUrl,
+            instruction,
+            publicId: publicId,
+          }
+          
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
+          
+          const renderResponse = await fetch(`${RENDER_API_URL}/process`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(requestBody),
+            signal: controller.signal,
           })
+          
+          clearTimeout(timeoutId)
+          
+          if (!renderResponse.ok) {
+            const errorText = await renderResponse.text()
+            console.error(`❌ Render API error response: ${errorText}`)
+            throw new Error(`Render API error (${renderResponse.status}): ${renderResponse.statusText}`)
+          }
+          
+          const renderData = await renderResponse.json()
+          console.log(`📤 Render API response:`, JSON.stringify(renderData, null, 2))
+          
+          if (renderData.success && renderData.videoUrl) {
+            console.log(`✅ Processed captions via Render API: ${renderData.videoUrl}`)
+            return renderData.videoUrl
+          } else {
+            throw new Error(renderData.message || renderData.error || 'Render API processing failed')
+          }
+        } catch (renderError: any) {
+          if (renderError.name === 'AbortError') {
+            console.error('❌ Render API timeout after 5 minutes')
+            throw new Error('Render API timeout: Caption processing took too long (5+ minutes). Please try with a shorter video or check Render API status.')
+          } else {
+            console.error('❌ Render API error:', renderError)
+            console.error('❌ Render API error details:', {
+              message: renderError.message,
+              status: renderError.status,
+              code: renderError.code,
+              stack: renderError.stack,
+            })
+          }
+          
+          // On Vercel, local FFmpeg won't work, so don't fall back
+          // Only fall back to local processing if we're not on Vercel (check for Vercel environment)
+          const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV
+          if (isVercel) {
+            throw new Error(
+              `Caption processing failed: Render API error - ${renderError.message || 'Unknown error'}. ` +
+              `On Vercel, Render API is required for caption processing. Please check RENDER_API_URL configuration and Render API status.`
+            )
+          }
+          
+          console.log('🔄 Falling back to local videoProcessor for captions (not on Vercel)...')
+          // Fall through to local processing only if not on Vercel
         }
-        
-        // On Vercel, local FFmpeg won't work, so don't fall back
-        // Only fall back to local processing if we're not on Vercel (check for Vercel environment)
+      } else {
+        // Render API not configured
         const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV
         if (isVercel) {
           throw new Error(
-            `Caption processing failed: Render API error - ${renderError.message || 'Unknown error'}. ` +
-            `On Vercel, Render API is required for caption processing. Please check RENDER_API_URL configuration and Render API status.`
+            `Caption processing failed: RENDER_API_URL is not configured. ` +
+            `On Vercel, Render API is required for caption processing. Please set RENDER_API_URL environment variable.`
           )
         }
-        
-        console.log('🔄 Falling back to local videoProcessor for captions (not on Vercel)...')
-        // Fall through to local processing only if not on Vercel
       }
-    } else {
-      // Render API not configured
-      const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV
-      if (isVercel) {
+      
+      // Use local videoProcessor (only if not on Vercel)
+      console.log('🔄 Using local videoProcessor for caption processing...')
+      try {
+        const processedUrl = await videoProcessor.process(inputVideoUrl, instruction)
+        console.log(`✅ Captions processed locally: ${processedUrl}`)
+        return processedUrl
+      } catch (localError: any) {
+        console.error('❌ Local videoProcessor failed:', localError)
+        console.error('❌ Local error details:', {
+          message: localError.message,
+          stack: localError.stack,
+        })
         throw new Error(
-          `Caption processing failed: RENDER_API_URL is not configured. ` +
-          `On Vercel, Render API is required for caption processing. Please set RENDER_API_URL environment variable.`
+          `Caption processing failed: Local FFmpeg processing error - ${localError.message || 'Unknown error'}. ` +
+          `Please check FFmpeg installation or configure RENDER_API_URL for remote processing.`
         )
       }
-    }
-    
-    // Use local videoProcessor (only if not on Vercel)
-    console.log('🔄 Using local videoProcessor for caption processing...')
-    try {
-      const processedUrl = await videoProcessor.process(inputVideoUrl, instruction)
-      console.log(`✅ Captions processed locally: ${processedUrl}`)
-      return processedUrl
-    } catch (localError: any) {
-      console.error('❌ Local videoProcessor failed:', localError)
-      console.error('❌ Local error details:', {
-        message: localError.message,
-        stack: localError.stack,
-      })
+    } catch (error) {
+      console.error('❌ Caption generation error:', error)
+      console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace')
+      // DO NOT return original video - throw error instead
+      // This ensures the frontend knows processing failed and doesn't show original as processed
+      const errorMessage = error instanceof Error ? error.message : String(error)
       throw new Error(
-        `Caption processing failed: Local FFmpeg processing error - ${localError.message || 'Unknown error'}. ` +
-        `Please check FFmpeg installation or configure RENDER_API_URL for remote processing.`
+        `Caption generation failed: ${errorMessage}. ` +
+        `Please check server logs for more details.`
       )
     }
   } catch (error) {
