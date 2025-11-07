@@ -523,85 +523,113 @@ class VideoProcessor {
         }
         
         case 'addTransition': {
-          const { preset = 'fade', duration = 1.0, startTime, endTime } = instruction.params
-          console.log(`🎬 Adding transition: ${preset} (duration: ${duration}s)`)
+          const { preset = 'fade', duration = 1.0, startTime, endTime } = instruction.params || {}
+          const safePreset = (preset || 'fade').toLowerCase()
+          const safeDuration = Math.max(0.1, Math.min(duration || 1.0, 10.0)) // Clamp between 0.1s and 10s
+          
+          console.log(`🎬 Adding transition: ${safePreset} (duration: ${safeDuration}s)`)
           
           // Apply transition effect based on preset
           let transitionFilter = ''
-          switch (preset?.toLowerCase()) {
+          switch (safePreset) {
             case 'fade':
             case 'fade in':
             case 'fade out':
+            case 'fade in/out':
               // Fade in/out effect
-              if (startTime !== undefined && endTime !== undefined) {
-                const fadeDuration = Math.min(duration, (endTime - startTime) / 2)
+              if (startTime !== undefined && endTime !== undefined && endTime > startTime) {
+                const fadeDuration = Math.min(safeDuration, (endTime - startTime) / 2)
                 transitionFilter = `fade=t=in:st=${startTime}:d=${fadeDuration},fade=t=out:st=${endTime - fadeDuration}:d=${fadeDuration}`
               } else {
-                transitionFilter = `fade=t=in:st=0:d=${duration},fade=t=out:st=*:d=${duration}`
+                transitionFilter = `fade=t=in:st=0:d=${safeDuration},fade=t=out:st=*:d=${safeDuration}`
               }
               break
             case 'cross dissolve':
             case 'dissolve':
+            case 'crossfade':
               // Cross dissolve (blend)
-              transitionFilter = `fade=t=in:st=0:d=${duration}`
+              transitionFilter = `fade=t=in:st=0:d=${safeDuration}`
               break
             case 'blur in':
             case 'blur out':
+            case 'blur in/out':
               // Blur transition
-              if (startTime !== undefined && endTime !== undefined) {
-                transitionFilter = `boxblur=enable='between(t,${startTime},${startTime + duration})':luma_radius=10:chroma_radius=10`
+              if (startTime !== undefined && endTime !== undefined && endTime > startTime) {
+                transitionFilter = `boxblur=enable='between(t,${startTime},${startTime + safeDuration})':luma_radius=10:chroma_radius=10`
               } else {
-                transitionFilter = `boxblur=enable='between(t,0,${duration})':luma_radius=10:chroma_radius=10`
+                transitionFilter = `boxblur=enable='between(t,0,${safeDuration})':luma_radius=10:chroma_radius=10`
               }
               break
             case 'zoom':
             case 'zoom in':
             case 'zoom out':
               // Zoom transition
-              const zoomFactor = preset.toLowerCase().includes('out') ? 0.8 : 1.2
-              if (startTime !== undefined && endTime !== undefined) {
-                const zoomDuration = Math.min(duration, (endTime - startTime))
+              const zoomFactor = safePreset.includes('out') ? 0.8 : 1.2
+              if (startTime !== undefined && endTime !== undefined && endTime > startTime) {
+                const zoomDuration = Math.min(safeDuration, (endTime - startTime))
                 transitionFilter = `scale=iw*${zoomFactor}:ih*${zoomFactor}:enable='between(t,${startTime},${startTime + zoomDuration})'`
               } else {
-                transitionFilter = `scale=iw*${zoomFactor}:ih*${zoomFactor}:enable='between(t,0,${duration})'`
+                transitionFilter = `scale=iw*${zoomFactor}:ih*${zoomFactor}:enable='between(t,0,${safeDuration})'`
               }
               break
             case 'slide':
+            case 'slide in':
+            case 'slide out':
               // Slide transition (horizontal movement)
-              transitionFilter = `crop=iw:ih:iw*${duration}:0`
+              transitionFilter = `crop=iw:ih:iw*${safeDuration}:0`
+              break
+            case 'wipe':
+              // Wipe transition
+              transitionFilter = `crop=iw:ih:iw*${safeDuration}:0`
+              break
+            case 'spin':
+            case 'rotate':
+              // Spin/rotate transition
+              transitionFilter = `rotate=PI*2*t/${safeDuration}:c=black@0`
               break
             default:
-              // Default to fade
-              transitionFilter = `fade=t=in:st=0:d=${duration},fade=t=out:st=*:d=${duration}`
+              // Default to fade for unknown presets
+              console.log(`⚠️ Unknown transition preset "${preset}", using default fade`)
+              transitionFilter = `fade=t=in:st=0:d=${safeDuration},fade=t=out:st=*:d=${safeDuration}`
           }
           
           if (transitionFilter) {
             command = command.videoFilters(transitionFilter)
+            console.log(`✅ Applied transition filter: ${transitionFilter.substring(0, 100)}...`)
           }
           break
         }
         
         case 'addMusic': {
-          const { preset, volume = 0.3, startTime, endTime, loop = false } = instruction.params
-          console.log(`🎵 Adding music: ${preset || 'default'} (volume: ${volume})`)
+          const { preset, volume = 0.3, startTime, endTime, loop = false, musicUrl } = instruction.params || {}
+          const safeVolume = Math.max(0, Math.min(volume || 0.3, 1.0)) // Clamp between 0 and 1
           
-          // Note: For now, we'll add a placeholder audio filter
-          // In a full implementation, you would download the music file and mix it
-          // For now, we'll apply audio effects to simulate music addition
-          // This is a simplified version - full implementation would require:
-          // 1. Download music file from a library
-          // 2. Mix it with existing audio using amix filter
+          console.log(`🎵 Adding music: ${preset || 'default'} (volume: ${safeVolume})`)
           
-          // Apply audio normalization and volume adjustment to simulate music mixing
-          let audioFilter = `volume=${volume}`
+          // If musicUrl is provided, download and mix it
+          if (musicUrl && typeof musicUrl === 'string' && musicUrl.startsWith('http')) {
+            console.log(`📥 Music URL provided, will download and mix: ${musicUrl}`)
+            // Note: Full implementation would require:
+            // 1. Download music file
+            // 2. Use complex filter to mix audio: [0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[outa]
+            // 3. Map the mixed audio to output
+            // For now, we'll apply volume adjustment to existing audio
+            console.log(`⚠️ Music URL mixing not yet fully implemented. Applying volume adjustment to existing audio.`)
+          }
+          
+          // Apply audio normalization and volume adjustment
+          // This enhances the existing audio to simulate music addition
+          // For full music mixing, we need to download the music file and use amix filter
+          let audioFilter = `volume=${safeVolume}`
           
           // If there's a time range, apply it
-          if (startTime !== undefined && endTime !== undefined) {
-            audioFilter = `volume=${volume}:enable='between(t,${startTime},${endTime})'`
+          if (startTime !== undefined && endTime !== undefined && endTime > startTime) {
+            audioFilter = `volume=${safeVolume}:enable='between(t,${startTime},${endTime})'`
           }
           
           command = command.audioFilters(audioFilter)
-          console.log(`⚠️ Note: Full music implementation requires music file library. Currently applying audio effects.`)
+          console.log(`✅ Applied audio filter: ${audioFilter}`)
+          console.log(`ℹ️ Note: Full music mixing requires music file library. Currently enhancing existing audio.`)
           break
         }
         
