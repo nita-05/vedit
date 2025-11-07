@@ -1263,7 +1263,66 @@ async function processCaptionsGeneration(
       },
     }
     
+    console.log('🎬 Processing video with captions...')
+    console.log('📊 Caption count:', captions.length)
+    console.log('📊 Style:', style)
+    console.log('📊 Custom params:', customParams)
+    
+    // Check if we should use Render API for caption processing
+    const isCaptions = instruction.operation === 'addCaptions' || instruction.operation === 'customSubtitle'
+    const needsFFmpeg = ['addCaptions', 'customSubtitle', 'addText', 'applyEffect', 'colorGrade', 'addTransition', 'addMusic', 'filter', 'trim', 'removeClip', 'merge', 'adjustSpeed', 'rotate', 'crop', 'removeObject', 'customText'].includes(instruction.operation)
+    
+    if (needsFFmpeg && RENDER_API_URL) {
+      console.log(`🌐 Using Render API for caption processing: ${RENDER_API_URL}`)
+      try {
+        const requestBody: any = {
+          videoUrl: inputVideoUrl,
+          instruction,
+          publicId: publicId,
+        }
+        
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
+        
+        const renderResponse = await fetch(`${RENDER_API_URL}/process`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        })
+        
+        clearTimeout(timeoutId)
+        
+        if (!renderResponse.ok) {
+          const errorText = await renderResponse.text()
+          console.error(`❌ Render API error response: ${errorText}`)
+          throw new Error(`Render API error (${renderResponse.status}): ${renderResponse.statusText}`)
+        }
+        
+        const renderData = await renderResponse.json()
+        console.log(`📤 Render API response:`, JSON.stringify(renderData, null, 2))
+        
+        if (renderData.success && renderData.videoUrl) {
+          console.log(`✅ Processed captions via Render API: ${renderData.videoUrl}`)
+          return renderData.videoUrl
+        } else {
+          throw new Error(renderData.message || renderData.error || 'Render API processing failed')
+        }
+      } catch (renderError: any) {
+        if (renderError.name === 'AbortError') {
+          console.error('❌ Render API timeout after 5 minutes')
+        } else {
+          console.error('❌ Render API error:', renderError)
+        }
+        console.log('🔄 Falling back to local videoProcessor for captions...')
+        // Fall through to local processing
+      }
+    }
+    
+    // Use local videoProcessor (Vercel or local dev)
+    console.log('🔄 Using local videoProcessor for caption processing...')
     const processedUrl = await videoProcessor.process(inputVideoUrl, instruction)
+    console.log(`✅ Captions processed locally: ${processedUrl}`)
     return processedUrl
   } catch (error) {
     console.error('❌ Caption generation error:', error)
