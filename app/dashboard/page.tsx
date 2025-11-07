@@ -1051,8 +1051,9 @@ export default function DashboardPage() {
                                 setVideoKey(prev => prev + 1)
                               }, 2000)
                             } else {
-                              console.error('❌ Max retries reached for processed video. Video may be unavailable.')
-                              (window as any).processedVideoRetryCount = 0 // Reset for next video
+                              const errorMsg = '❌ Max retries reached for processed video. Video may be unavailable.'
+                              console.error(errorMsg)
+                              ;(window as any).processedVideoRetryCount = 0 // Reset for next video
                             }
                           }
                         }}
