@@ -8,6 +8,7 @@ import { CloudinaryTransformProcessor } from '@/lib/cloudinaryTransform'
 import { saveEditHistory } from '@/lib/db'
 import fs from 'fs'
 import path from 'path'
+import os from 'os'
 import ffmpeg from 'fluent-ffmpeg'
 import { validateVideoOperation, validatePublicId, sanitizeInput } from '@/lib/validation'
 import { handleApiError, ValidationError, ProcessingError, logError } from '@/lib/errorHandler'
@@ -35,6 +36,15 @@ cloudinary.config({
 })
 
 const videoProcessor = new VideoProcessor()
+
+// Helper function to get writable temp directory (works on Vercel and local)
+function getTempDir(): string {
+  const isVercel = process.env.VERCEL === '1'
+  if (isVercel) {
+    return '/tmp'
+  }
+  return process.env.TMPDIR || process.env.TEMP || os.tmpdir()
+}
 
 // Render API URL for FFmpeg processing (if deployed)
 const RENDER_API_URL = process.env.RENDER_API_URL || process.env.NEXT_PUBLIC_RENDER_API_URL
@@ -972,7 +982,7 @@ async function processCaptionsGeneration(
     const arrayBuffer = await response.arrayBuffer()
     
     // Save to temp file for Whisper API
-    const tempDir = path.join(process.cwd(), 'temp')
+    const tempDir = getTempDir()
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true })
     }
@@ -1674,7 +1684,7 @@ async function generateAIVoiceover(publicId: string, params: any): Promise<strin
     })
     
     const buffer = Buffer.from(await mp3.arrayBuffer())
-    const tempDir = path.join(process.cwd(), 'temp')
+    const tempDir = getTempDir()
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true })
     }
@@ -1776,7 +1786,7 @@ async function generateCustomOverlay(publicId: string, params: any): Promise<str
     const imageBuffer = Buffer.from(arrayBuffer)
     
     // Download overlay image
-    const tempDir = path.join(process.cwd(), 'temp')
+    const tempDir = getTempDir()
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true })
     }

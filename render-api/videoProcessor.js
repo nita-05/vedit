@@ -189,7 +189,8 @@ class VideoProcessor {
     })
     
     // Save ASS file to temp directory
-    const tempDir = process.env.TEMP_DIR || '/tmp'
+    // Use /tmp on Render/Linux, or system temp on Windows
+    const tempDir = process.env.TEMP_DIR || process.env.TMPDIR || (process.platform === 'win32' ? require('os').tmpdir() : '/tmp')
     if (!fs.existsSync(tempDir)) {
       fs.mkdirSync(tempDir, { recursive: true })
     }
