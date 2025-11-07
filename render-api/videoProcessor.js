@@ -20,15 +20,30 @@ class VideoProcessor {
     if (startTime === undefined && endTime === undefined) {
       return filter
     }
-    
+
     let enableExpr = ''
     if (startTime !== undefined && endTime !== undefined) {
       enableExpr = `enable='between(t,${startTime},${endTime})'`
     } else if (startTime !== undefined) {
       enableExpr = `enable='gte(t,${startTime})'`
     }
-    
-    return `${filter},${enableExpr}`
+
+    if (!enableExpr) {
+      return filter
+    }
+
+    // Apply enable option to each filter segment (comma-separated)
+    const enableOption = enableExpr.startsWith(':') ? enableExpr : `:${enableExpr}`
+    return filter
+      .split(',')
+      .map(segment => {
+        const trimmed = segment.trim()
+        if (!trimmed || trimmed.includes('enable=')) {
+          return trimmed
+        }
+        return `${trimmed}${enableOption}`
+      })
+      .join(',')
   }
 
   /**
