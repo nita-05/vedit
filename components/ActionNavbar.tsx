@@ -38,7 +38,7 @@ const effectPresets = [
 ]
 
 const transitionPresets = [
-  'Fade', 'Slide', 'Wipe', 'Zoom', 'Cross Dissolve', 'Blur In/Out',
+  'Fade', 'Slide', 'Wipe', 'Cross Dissolve', 'Blur In/Out',
   'Spin', 'Morph Cut', 'Split Reveal', 'Flash', 'Zoom Blur', 'Cube Rotate',
   '3D Flip', 'Warp', 'Ripple', 'Glitch Transition', 'Luma Fade',
   'Light Sweep', 'Stretch Pull', 'Film Roll', 'Page Turn', 'Diagonal Wipe',
