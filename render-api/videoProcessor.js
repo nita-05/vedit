@@ -229,6 +229,48 @@ class VideoProcessor {
           break
         }
         
+        case 'removeClip': {
+          const { startTime, endTime } = instruction.params
+          console.log(`🗑️ Removing clip: ${startTime}s to ${endTime}s`)
+          
+          // Validate times
+          if (startTime < 0 || endTime <= startTime) {
+            console.warn(`⚠️ Invalid time range: startTime (${startTime}) >= endTime (${endTime}), skipping removal`)
+            break
+          }
+          
+          // Use complex filter to remove segment:
+          // 1. Trim first part: 0 to startTime
+          // 2. Trim second part: endTime to end
+          // 3. Concat both parts
+          let filterComplex
+          
+          if (startTime === 0) {
+            // Removing from start: only keep part after endTime
+            filterComplex = `[0:v]trim=${endTime},setpts=PTS-STARTPTS[outv];[0:a]atrim=${endTime},asetpts=PTS-STARTPTS[outa]`
+          } else {
+            // Removing middle segment: keep part before startTime and part after endTime
+            filterComplex = [
+              // First segment: 0 to startTime
+              `[0:v]trim=0:${startTime},setpts=PTS-STARTPTS[v1];[0:a]atrim=0:${startTime},asetpts=PTS-STARTPTS[a1]`,
+              // Second segment: endTime to end
+              `[0:v]trim=${endTime},setpts=PTS-STARTPTS[v2];[0:a]atrim=${endTime},asetpts=PTS-STARTPTS[a2]`,
+              // Concatenate both segments
+              `[v1][a1][v2][a2]concat=n=2:v=1:a=1[outv][outa]`
+            ].join('; ')
+          }
+          
+          command
+            .complexFilter(filterComplex)
+            .outputOptions([
+              '-map', '[outv]',
+              '-map', '[outa]'
+            ])
+          
+          console.log(`✂️ Removing segment from ${startTime}s to ${endTime}s using filter_complex`)
+          break
+        }
+        
         case 'colorGrade': {
           const { preset, startTime, endTime } = instruction.params
           command = this.applyColorGrade(command, preset, { startTime, endTime })
