@@ -13,9 +13,36 @@ const app = express()
 const PORT = process.env.PORT || 3001
 
 // Middleware
+// CORS: Allow requests from Vercel deployment and localhost
+const allowedOrigins = process.env.ALLOWED_ORIGINS?.split(',') || [
+  'https://vedit-theta.vercel.app',
+  'http://localhost:3000',
+  'https://*.vercel.app' // Allow all Vercel preview deployments
+]
 app.use(cors({
-  origin: process.env.ALLOWED_ORIGINS?.split(',') || '*',
-  credentials: true
+  origin: (origin, callback) => {
+    // Allow requests with no origin (mobile apps, curl, etc.)
+    if (!origin) return callback(null, true)
+    
+    // Check if origin matches allowed patterns
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (allowed.includes('*')) {
+        const pattern = allowed.replace('*', '.*')
+        return new RegExp(pattern).test(origin)
+      }
+      return origin === allowed
+    })
+    
+    if (isAllowed) {
+      callback(null, true)
+    } else {
+      console.log(`⚠️ CORS blocked origin: ${origin}`)
+      callback(null, true) // Still allow for now, but log it
+    }
+  },
+  credentials: true,
+  methods: ['GET', 'POST', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization']
 }))
 app.use(express.json({ limit: '100mb' }))
 app.use(express.urlencoded({ extended: true, limit: '100mb' }))

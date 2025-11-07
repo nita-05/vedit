@@ -112,6 +112,10 @@ class VideoProcessor {
     
     switch (type?.toLowerCase()) {
       case 'grayscale':
+      case 'grayscale effect':
+      case 'black & white':
+      case 'black and white':
+      case 'b&w':
         filter = 'hue=s=0'
         break
       case 'blur':
@@ -236,7 +240,8 @@ class VideoProcessor {
           break
         }
         
-        case 'addText': {
+        case 'addText':
+        case 'customText': {
           command = this.addTextOverlay(command, instruction.params)
           break
         }

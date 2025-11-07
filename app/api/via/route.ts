@@ -39,6 +39,13 @@ const videoProcessor = new VideoProcessor()
 // Render API URL for FFmpeg processing (if deployed)
 const RENDER_API_URL = process.env.RENDER_API_URL || process.env.NEXT_PUBLIC_RENDER_API_URL
 
+// Log Render API configuration status
+if (RENDER_API_URL) {
+  console.log(`✅ Render API configured: ${RENDER_API_URL}`)
+} else {
+  console.log(`⚠️ Render API not configured - will use Cloudinary fallback for operations`)
+}
+
 // System prompt for VIA
 const SYSTEM_PROMPT = `You are VIA, an AI video and image editing assistant for VEDIT platform. You interpret natural language editing commands and convert them to structured JSON instructions for FFmpeg operations.
 
@@ -737,18 +744,37 @@ export async function POST(request: NextRequest) {
       // PRIORITY 3: Try Cloudinary fallback
       
       // Operations that need FFmpeg (but captions handled on Vercel due to Whisper API)
-      const needsFFmpeg = ['addMusic', 'merge', 'trim', 'removeClip', 'addTransition', 'generateVoiceover'].includes(instruction.operation)
+      // CRITICAL: Include filter and colorGrade operations to use Render API for better quality
+      const needsFFmpeg = [
+        'addMusic', 
+        'merge', 
+        'trim', 
+        'removeClip', 
+        'addTransition', 
+        'generateVoiceover',
+        'filter', // Include filter operations (grayscale, blur, etc.) for Render API
+        'colorGrade', // Include color grading for Render API
+        'applyEffect', // Include effects for Render API
+        'addText', // Include text overlays for Render API
+        'customText', // Include custom text for Render API
+      ].includes(instruction.operation)
       const isCaptions = instruction.operation === 'addCaptions' || instruction.operation === 'customSubtitle'
       
       // Skip Render for captions (handled on Vercel with Whisper)
       if (needsFFmpeg && RENDER_API_URL && !isCaptions) {
         console.log(`🌐 Using Render API for FFmpeg operation: ${instruction.operation}`)
+        console.log(`🌐 Render API URL: ${RENDER_API_URL}`)
+        console.log(`🌐 Input video URL: ${inputVideoUrl}`)
         try {
           const requestBody: any = {
-            videoUrl: inputVideoUrl,
+            videoUrl: inputVideoUrl, // CRITICAL: Use current processed video URL for chained editing
             instruction,
             publicId: videoPublicId,
           }
+          
+          // Add timeout for Render API (5 minutes max)
+          const controller = new AbortController()
+          const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
           
           const renderResponse = await fetch(`${RENDER_API_URL}/process`, {
             method: 'POST',
@@ -756,23 +782,34 @@ export async function POST(request: NextRequest) {
               'Content-Type': 'application/json',
             },
             body: JSON.stringify(requestBody),
+            signal: controller.signal,
           })
           
+          clearTimeout(timeoutId)
+          
           if (!renderResponse.ok) {
-            throw new Error(`Render API error: ${renderResponse.statusText}`)
+            const errorText = await renderResponse.text()
+            console.error(`❌ Render API error response: ${errorText}`)
+            throw new Error(`Render API error (${renderResponse.status}): ${renderResponse.statusText}`)
           }
           
           const renderData = await renderResponse.json()
+          console.log(`📤 Render API response:`, JSON.stringify(renderData, null, 2))
+          
           if (renderData.success && renderData.videoUrl) {
             processedUrl = renderData.videoUrl
             console.log(`✅ Processed via Render API: ${processedUrl}`)
           } else {
-            throw new Error(renderData.message || 'Render API processing failed')
+            throw new Error(renderData.message || renderData.error || 'Render API processing failed')
           }
         } catch (renderError: any) {
-          console.error('❌ Render API failed:', renderError)
-          console.log('🔄 Falling back to local FFmpeg...')
-          // Fall through to local FFmpeg attempt
+          if (renderError.name === 'AbortError') {
+            console.error('❌ Render API timeout after 5 minutes')
+          } else {
+            console.error('❌ Render API failed:', renderError.message || renderError)
+          }
+          console.log('🔄 Falling back to Cloudinary/local FFmpeg...')
+          // Fall through to Cloudinary/local FFmpeg attempt
         }
       }
       
