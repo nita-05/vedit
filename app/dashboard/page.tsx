@@ -1078,9 +1078,14 @@ export default function DashboardPage() {
                                   // Cloudinary transformations (grayscale, color grading, etc.) don't change video length
                                   // Streaming metadata from Cloudinary is often incomplete/unreliable
                                   if (!isOriginal && originalVideoDuration > 0) {
-                                    console.log('📊 Using original duration for processed video:', originalVideoDuration, 'seconds')
-                                    console.log('📊 (Cloudinary streaming metadata shows:', newDuration, 'seconds, but video is actually', originalVideoDuration, 'seconds)')
-                                    setDuration(originalVideoDuration)
+                                    const diff = Math.abs(originalVideoDuration - newDuration)
+                                    if (diff <= 1) {
+                                      console.log('📊 Using original duration for processed video (within tolerance):', originalVideoDuration, 'seconds')
+                                      setDuration(originalVideoDuration)
+                                    } else {
+                                      console.log('📊 Processed video duration changed significantly (diff', diff, 's) - using reported duration:', newDuration)
+                                      setDuration(newDuration)
+                                    }
                                   } else {
                                     setDuration(newDuration)
                                   }
@@ -1098,9 +1103,12 @@ export default function DashboardPage() {
                                   // For processed videos, ALWAYS use original duration
                                   // Cloudinary transformations don't change video length, and streaming metadata is unreliable
                                   if (!isOriginal && originalVideoDuration > 0) {
-                                    // Always use original duration for processed videos
-                                    // Cloudinary streaming often provides incomplete metadata
-                                    setDuration(originalVideoDuration)
+                                    const diff = Math.abs(originalVideoDuration - newDuration)
+                                    if (diff <= 1) {
+                                      setDuration(originalVideoDuration)
+                                    } else {
+                                      setDuration(newDuration)
+                                    }
                                   } else {
                                     setDuration(newDuration)
                                   }
