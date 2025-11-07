@@ -83,9 +83,9 @@ export async function searchFreesoundMusic(
     const searchQuery = queries.join(' OR ')
 
     // Build search URL
+    // Freesound API v2 uses token authentication in query string OR Authorization header
     const searchParams = new URLSearchParams({
       query: searchQuery,
-      token: FREESOUND_API_KEY,
       fields: 'id,name,tags,description,duration,previews,license,download',
       filter: 'duration:[2 TO 300]', // 2 seconds to 5 minutes
       sort: 'rating_desc', // Sort by rating (best quality first)
@@ -99,12 +99,15 @@ export async function searchFreesoundMusic(
       searchParams.set('filter', `duration:[${minDuration} TO ${maxDuration}]`)
     }
 
-    const searchUrl = `${FREESOUND_BASE_URL}/search/text/?${searchParams.toString()}`
+    // Freesound API v2 authentication: Add token to query string
+    searchParams.append('token', FREESOUND_API_KEY)
+    const finalSearchUrl = `${FREESOUND_BASE_URL}/search/text/?${searchParams.toString()}`
     console.log(`🔍 Searching Freesound: ${searchQuery}`)
-
-    const response = await fetch(searchUrl, {
+    
+    const response = await fetch(finalSearchUrl, {
+      method: 'GET',
       headers: {
-        'Authorization': `Token ${FREESOUND_API_KEY}`,
+        'Accept': 'application/json',
       },
     })
 
