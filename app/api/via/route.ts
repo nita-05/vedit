@@ -566,6 +566,8 @@ export async function POST(request: NextRequest) {
       throw new ProcessingError('Failed to parse AI response. Please try again.')
     }
 
+    normalizeInstructionParams(instruction)
+
     console.log('🤖 OpenAI instruction:', JSON.stringify(instruction, null, 2))
 
     // Validate operation parameters if operation exists

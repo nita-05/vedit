@@ -38,8 +38,14 @@ export function validateVideoOperation(operation: string, params: any): Validati
       break
 
     case 'adjustSpeed':
-      if (![0.5, 1.0, 1.5, 2.0].includes(params.speed)) {
-        errors.push('Speed must be 0.5, 1.0, 1.5, or 2.0')
+      if (params.speed === undefined || params.speed === null) {
+        errors.push('Speed value is required')
+      } else if (typeof params.speed !== 'number' || Number.isNaN(params.speed)) {
+        errors.push('Speed must be a numeric value')
+      } else if (params.speed <= 0) {
+        errors.push('Speed must be greater than 0')
+      } else if (params.speed > 5) {
+        errors.push('Speed must be less than or equal to 5x')
       }
       break
 

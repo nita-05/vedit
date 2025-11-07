@@ -2,6 +2,22 @@ const ffmpeg = require('fluent-ffmpeg')
 const fs = require('fs')
 const path = require('path')
 
+const EFFECT_INTENSITY_KEYWORDS = {
+  subtle: 0.3,
+  light: 0.3,
+  soft: 0.35,
+  gentle: 0.35,
+  medium: 0.6,
+  moderate: 0.6,
+  default: 0.6,
+  normal: 0.6,
+  strong: 0.85,
+  intense: 0.9,
+  heavy: 0.9,
+  high: 0.85,
+  extreme: 0.95,
+}
+
 /**
  * Video Processor for Render API
  * Handles all FFmpeg operations
@@ -126,11 +142,25 @@ class VideoProcessor {
    * Apply visual effects
    */
   applyEffect(command, params) {
-    const { preset, startTime, endTime, intensity = 0.5 } = params
+    const { preset, startTime, endTime } = params
+    let rawIntensity = params.intensity ?? params.strength ?? params.amount
+    let numericIntensity = typeof rawIntensity === 'number' && Number.isFinite(rawIntensity)
+      ? rawIntensity
+      : parseFloat(rawIntensity)
+
+    if (!Number.isFinite(numericIntensity)) {
+      const key = typeof rawIntensity === 'string' ? rawIntensity.toLowerCase().trim() : ''
+      if (EFFECT_INTENSITY_KEYWORDS[key] !== undefined) {
+        numericIntensity = EFFECT_INTENSITY_KEYWORDS[key]
+      }
+    }
+
+    if (!Number.isFinite(numericIntensity)) {
+      numericIntensity = 0.5
+    }
+
+    const intensityMultiplier = Math.max(0.1, Math.min(1.0, numericIntensity))
     let filter = ''
-    
-    // Normalize intensity (0-1) to filter strength
-    const intensityMultiplier = Math.max(0.1, Math.min(1.0, intensity || 0.5))
     
     switch (preset?.toLowerCase()) {
       case 'glow':
@@ -280,9 +310,22 @@ class VideoProcessor {
   addTextOverlay(command, params) {
     const { text, x, y, fontSize, color, startTime, endTime, position } = params
 
-    const backgroundColor = params.backgroundColor || params.bgColor || (params.highlight ? (typeof params.highlight === 'string' ? params.highlight : 'yellow') : null)
-    const highlightOpacity = params.backgroundOpacity ?? params.highlightOpacity ?? 0.65
-    const boxBorderWidth = params.boxBorderWidth ?? params.boxBorder ?? 20
+    let backgroundColor = params.backgroundColor || params.bgColor || (params.highlight ? (typeof params.highlight === 'string' ? params.highlight : 'yellow') : null)
+    const highlightOpacityRaw = params.backgroundOpacity ?? params.highlightOpacity
+    let highlightOpacity = typeof highlightOpacityRaw === 'number' && Number.isFinite(highlightOpacityRaw)
+      ? highlightOpacityRaw
+      : parseFloat(highlightOpacityRaw)
+    if (!Number.isFinite(highlightOpacity)) {
+      highlightOpacity = 0.65
+    }
+    highlightOpacity = Math.max(0, Math.min(highlightOpacity, 1))
+
+    const boxBorderWidthRaw = params.boxBorderWidth ?? params.boxBorder
+    let boxBorderWidth = parseFloat(boxBorderWidthRaw)
+    if (!Number.isFinite(boxBorderWidth)) {
+      boxBorderWidth = 20
+    }
+    boxBorderWidth = Math.max(0, boxBorderWidth)
 
     // Escape special characters for drawtext
     const escapedText = text.replace(/:/g, '\\:').replace(/'/g, "\\'")
@@ -319,16 +362,27 @@ class VideoProcessor {
       }
     }
     
-    let drawtextFilter = `drawtext=text='${escapedText}':fontsize=${fontSize || 24}:fontcolor=${color || 'white'}:x=${xPos}:y=${yPos}`
+    const resolvedFontColor = this.normalizeDrawtextColor(color || 'white') || 'white'
+    let drawtextFilter = `drawtext=text='${escapedText}':fontsize=${fontSize || 24}:fontcolor=${resolvedFontColor}:x=${xPos}:y=${yPos}`
 
-    if (backgroundColor && backgroundColor.toLowerCase() !== 'none' && backgroundColor.toLowerCase() !== 'transparent') {
-      const boxColor = this.normalizeDrawtextColor(backgroundColor, highlightOpacity)
-      if (boxColor) {
-        drawtextFilter += `:box=1:boxcolor=${boxColor}:boxborderw=${boxBorderWidth}`
+    if (backgroundColor && typeof backgroundColor === 'string') {
+      const lower = backgroundColor.toLowerCase().trim()
+      if (!['none', 'transparent', 'clear', 'no'].includes(lower)) {
+        const mapped = this.normalizeDrawtextColor(backgroundColor, highlightOpacity)
+        if (mapped) {
+          drawtextFilter += `:box=1:boxcolor=${mapped}:boxborderw=${boxBorderWidth}`
+        }
       }
     } else if (params.highlight === true) {
       const defaultBox = this.normalizeDrawtextColor('yellow', highlightOpacity)
       drawtextFilter += `:box=1:boxcolor=${defaultBox}:boxborderw=${boxBorderWidth}`
+    }
+
+    if (params.box === true && params.boxColor) {
+      const mapped = this.normalizeDrawtextColor(params.boxColor, highlightOpacity)
+      if (mapped) {
+        drawtextFilter += `:box=1:boxcolor=${mapped}:boxborderw=${boxBorderWidth}`
+      }
     }
     
     if (startTime !== undefined || endTime !== undefined) {
