@@ -146,16 +146,50 @@ class VideoProcessor {
    * Add text overlay
    */
   addTextOverlay(command, params) {
-    const { text, x, y, fontSize, color, startTime, endTime } = params
+    const { text, x, y, fontSize, color, startTime, endTime, position } = params
     
     // Escape special characters for drawtext
     const escapedText = text.replace(/:/g, '\\:').replace(/'/g, "\\'")
     
-    let drawtextFilter = `drawtext=text='${escapedText}':fontsize=${fontSize || 24}:fontcolor=${color || 'white'}:x=${x || '(w-text_w)/2'}:y=${y || '(h-text_h)/2'}`
+    // Parse position parameter if x/y not explicitly provided
+    let xPos = x
+    let yPos = y
+    
+    if (!xPos || !yPos) {
+      const pos = (position || '').toLowerCase()
+      
+      // Horizontal positioning
+      if (!xPos) {
+        if (pos.includes('left')) {
+          xPos = '10' // Left margin
+        } else if (pos.includes('right')) {
+          xPos = '(w-text_w-10)' // Right margin
+        } else {
+          xPos = '(w-text_w)/2' // Center (default)
+        }
+      }
+      
+      // Vertical positioning
+      if (!yPos) {
+        if (pos === 'top' || pos.includes('top')) {
+          yPos = '10' // Top margin
+        } else if (pos === 'bottom' || pos.includes('bottom')) {
+          yPos = '(h-text_h-10)' // Bottom margin
+        } else if (pos === 'center' || pos === 'centre') {
+          yPos = '(h-text_h)/2' // Center
+        } else {
+          yPos = '(h-text_h)/2' // Default to center
+        }
+      }
+    }
+    
+    let drawtextFilter = `drawtext=text='${escapedText}':fontsize=${fontSize || 24}:fontcolor=${color || 'white'}:x=${xPos}:y=${yPos}`
     
     if (startTime !== undefined || endTime !== undefined) {
       drawtextFilter = this.applyTimeBasedFilter(drawtextFilter, startTime, endTime)
     }
+    
+    console.log(`📝 Text overlay: "${text}" at position ${position || 'default'} (x=${xPos}, y=${yPos})`)
     
     return command.videoFilters(drawtextFilter)
   }

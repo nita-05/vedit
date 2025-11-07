@@ -387,6 +387,10 @@ ADVANCED FEATURE HANDLING:
 - For custom text/subtitle colors: Accept color names (white, red, blue, yellow, green, black, cyan, magenta) or hex codes (#FF0000)
 - For custom font sizes: Accept numbers (12-120) or sizes (small=24, medium=36, large=48, xlarge=60)
 - For custom positions: Accept top, bottom, center, left, right, top-left, top-right, bottom-left, bottom-right
+- Position keywords: "at top", "on top", "at the top", "top of", "at bottom", "on bottom", "at the bottom", "bottom of", "in center", "in the center", "centered", "at left", "on left", "at right", "on right" → map to position parameter
+- When user says "add text X at top" or "add text X on top" → ALWAYS use position: "top"
+- When user says "add text X at bottom" or "add text X on bottom" → ALWAYS use position: "bottom"
+- When user says "add text X in center" or "add text X centered" → ALWAYS use position: "center"
 - For subtitle customization: Use customSubtitle operation when user specifies color, size, or style changes
 - For object removal: Use removeObject with region (left, right, top, bottom, center) and method (blur, crop, black)
 - For speed: Accept "slow"=0.5, "normal"=1.0, "fast"=1.5, "very fast"=2.0, or direct numbers
