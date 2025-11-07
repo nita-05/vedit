@@ -61,25 +61,18 @@ export default function DashboardPage() {
     }
   }, [status, router])
 
-  // Debug: Log when selectedMedia changes
+  // Debug: Log when selectedMedia changes (memoized to prevent unnecessary re-renders)
   useEffect(() => {
-    console.log('🎬 Dashboard: selectedMedia changed:', selectedMedia)
-    if (selectedMedia) {
-      console.log('🎬 Dashboard: selectedMedia URL:', selectedMedia.url)
-      // Store original URL ONLY when first selecting a video (not when URL is updated after processing)
-      // Only set if originalVideoUrl is null AND this is likely the first load (not a processed URL)
-      if (!originalVideoUrl && selectedMedia.url && !selectedMedia.url.includes('_processed') && !selectedMedia.url.includes('e_grayscale') && !selectedMedia.url.includes('e_') && !selectedMedia.url.includes('?_t=') && !selectedMedia.url.includes('?_cb=')) {
-        setOriginalVideoUrl(selectedMedia.url)
-        console.log('📌 Dashboard: Stored original video URL:', selectedMedia.url)
-      } else if (originalVideoUrl && selectedMedia.url === originalVideoUrl) {
-        console.log('📌 Dashboard: URL matches original - this is the original video')
-      } else if (originalVideoUrl && selectedMedia.url !== originalVideoUrl) {
-        console.log('📌 Dashboard: URL is different from original - this is a processed video')
-        console.log('📌 Dashboard: Original:', originalVideoUrl)
-        console.log('📌 Dashboard: Current:', selectedMedia.url)
-      }
+    if (!selectedMedia) return
+    
+    // Store original URL ONLY when first selecting a video (not when URL is updated after processing)
+    // Only set if originalVideoUrl is null AND this is likely the first load (not a processed URL)
+    if (!originalVideoUrl && selectedMedia.url && !selectedMedia.url.includes('_processed') && !selectedMedia.url.includes('e_grayscale') && !selectedMedia.url.includes('e_') && !selectedMedia.url.includes('?_t=') && !selectedMedia.url.includes('?_cb=')) {
+      setOriginalVideoUrl(selectedMedia.url)
+      console.log('📌 Dashboard: Stored original video URL:', selectedMedia.url)
     }
-  }, [selectedMedia])
+    // Removed excessive logging to reduce console noise and potential re-render triggers
+  }, [selectedMedia?.url, originalVideoUrl]) // Only depend on URL, not entire selectedMedia object
 
   // Force ReactPlayer remount when URL changes significantly (safety net)
   // This catches URL changes that might not trigger onVideoUpdate
@@ -149,35 +142,35 @@ export default function DashboardPage() {
   useEffect(() => {
     // Skip if this is a manual update (from onVideoUpdate)
     if (isManualUpdateRef.current) {
-      // Don't reset the flag here - let it be reset by the timeout in onVideoUpdate
-      // This prevents race conditions where useEffect runs before flag is set
       return
     }
     
-    if (selectedMedia?.url && selectedMedia.type === 'video') {
-      // Extract base URL without query params for comparison
-      const baseUrl = selectedMedia.url.split('?')[0]
-      const prevBaseUrl = prevUrlRef.current?.split('?')[0]
-      
-      // Only remount if:
-      // 1. URL actually changed (not just cache-busting params)
-      // 2. It's a processed video (different from original)
-      // 3. videoKey wasn't updated in the last 1000ms (prevent infinite loops)
-      const timeSinceLastUpdate = Date.now() - lastVideoKeyUpdateRef.current
-      if (prevBaseUrl && baseUrl !== prevBaseUrl && baseUrl !== originalVideoUrl?.split('?')[0] && timeSinceLastUpdate > 1000) {
-        console.log('🔄 Dashboard: URL base changed (safety net), forcing ReactPlayer remount')
-        console.log('🔄 Dashboard: Old base URL:', prevBaseUrl)
-        console.log('🔄 Dashboard: New base URL:', baseUrl)
-        setVideoKey(prev => {
-          lastVideoKeyUpdateRef.current = Date.now()
-          return prev + 1
-        })
-      }
-      
-      // Update ref for next comparison
+    if (!selectedMedia?.url || selectedMedia.type !== 'video') {
+      return
+    }
+    
+    // Extract base URL without query params for comparison
+    const baseUrl = selectedMedia.url.split('?')[0]
+    const prevBaseUrl = prevUrlRef.current?.split('?')[0]
+    
+    // Only remount if:
+    // 1. URL actually changed (not just cache-busting params)
+    // 2. It's a processed video (different from original)
+    // 3. videoKey wasn't updated in the last 1000ms (prevent infinite loops)
+    const timeSinceLastUpdate = Date.now() - lastVideoKeyUpdateRef.current
+    if (prevBaseUrl && baseUrl !== prevBaseUrl && baseUrl !== originalVideoUrl?.split('?')[0] && timeSinceLastUpdate > 1000) {
+      console.log('🔄 Dashboard: URL base changed (safety net), forcing ReactPlayer remount')
+      setVideoKey(prev => {
+        lastVideoKeyUpdateRef.current = Date.now()
+        return prev + 1
+      })
+    }
+    
+    // Update ref for next comparison (only if URL actually changed)
+    if (baseUrl !== prevBaseUrl) {
       prevUrlRef.current = selectedMedia.url
     }
-  }, [selectedMedia?.url, originalVideoUrl])
+  }, [selectedMedia?.url, originalVideoUrl, selectedMedia?.type])
 
   // Auto-backup every 5 minutes
   useEffect(() => {

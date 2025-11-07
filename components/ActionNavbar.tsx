@@ -146,30 +146,48 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
     }
   }, [activePanel])
 
-  // Update position on scroll/resize
+  // Update position on scroll/resize (throttled to prevent excessive re-renders)
   useEffect(() => {
+    if (!activePanel) return
+    
+    let rafId: number | null = null
+    let lastUpdate = 0
+    const throttleDelay = 100 // Throttle to max once per 100ms
+    
     const updatePosition = () => {
-      if (activePanel) {
-        const button = buttonRefs.current[activePanel]
-        if (button) {
-          const rect = button.getBoundingClientRect()
-          const viewportHeight = window.innerHeight
-          const spaceBelow = viewportHeight - rect.bottom - 16
-          const spaceAbove = rect.top - 16
-          
-          // Determine best position: below by default, above if not enough space
-          let panelTop = rect.bottom + 8
-          
-          // Try to fit below first
-          if (spaceBelow < 400 && spaceAbove > spaceBelow) {
-            // Not enough space below, try above
-            panelTop = rect.top - 400 - 8
-            // If still doesn't fit, use available space
-            if (panelTop < 0) {
-              panelTop = 16
-            }
+      const now = Date.now()
+      if (now - lastUpdate < throttleDelay) {
+        if (rafId) cancelAnimationFrame(rafId)
+        rafId = requestAnimationFrame(() => {
+          setTimeout(updatePosition, throttleDelay - (now - lastUpdate))
+        })
+        return
+      }
+      lastUpdate = now
+      
+      const button = buttonRefs.current[activePanel]
+      if (button) {
+        const rect = button.getBoundingClientRect()
+        const viewportHeight = window.innerHeight
+        const spaceBelow = viewportHeight - rect.bottom - 16
+        const spaceAbove = rect.top - 16
+        
+        // Determine best position: below by default, above if not enough space
+        let panelTop = rect.bottom + 8
+        
+        // Try to fit below first
+        if (spaceBelow < 400 && spaceAbove > spaceBelow) {
+          // Not enough space below, try above
+          panelTop = rect.top - 400 - 8
+          // If still doesn't fit, use available space
+          if (panelTop < 0) {
+            panelTop = 16
           }
-          
+        }
+        
+        // Only update if position actually changed (prevent unnecessary re-renders)
+        const currentPos = panelPosition[activePanel]
+        if (!currentPos || currentPos.left !== rect.left || currentPos.top !== panelTop) {
           setPanelPosition({
             [activePanel]: {
               left: rect.left,
@@ -180,16 +198,16 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
       }
     }
 
-    if (activePanel) {
-      window.addEventListener('scroll', updatePosition, true)
-      window.addEventListener('resize', updatePosition)
-      updatePosition()
-      return () => {
-        window.removeEventListener('scroll', updatePosition, true)
-        window.removeEventListener('resize', updatePosition)
-      }
+    window.addEventListener('scroll', updatePosition, true)
+    window.addEventListener('resize', updatePosition)
+    updatePosition() // Initial position
+    
+    return () => {
+      if (rafId) cancelAnimationFrame(rafId)
+      window.removeEventListener('scroll', updatePosition, true)
+      window.removeEventListener('resize', updatePosition)
     }
-  }, [activePanel])
+  }, [activePanel, panelPosition])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
