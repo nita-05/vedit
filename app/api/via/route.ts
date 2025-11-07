@@ -1003,24 +1003,51 @@ async function processCaptionsGeneration(
     
     // Download video for Whisper
     console.log('📥 Downloading video for transcription:', inputVideoUrl)
-    const response = await fetch(inputVideoUrl)
-    if (!response.ok) {
-      throw new Error(`Failed to download video for transcription: ${response.status} ${response.statusText}`)
+    let response: Response
+    try {
+      response = await fetch(inputVideoUrl, {
+        headers: {
+          'Accept': 'video/*',
+        },
+      })
+      if (!response.ok) {
+        throw new Error(`Failed to download video for transcription: ${response.status} ${response.statusText}`)
+      }
+    } catch (fetchError: any) {
+      console.error('❌ Video download error:', fetchError)
+      throw new Error(`Failed to download video: ${fetchError.message || 'Network error'}`)
     }
     
     // Check content type
     const contentType = response.headers.get('content-type') || ''
     console.log(`📊 Video content type: ${contentType}`)
     
+    // Check if it's actually a video
+    if (!contentType.includes('video') && !contentType.includes('application/octet-stream')) {
+      console.warn(`⚠️ Unexpected content type: ${contentType}, proceeding anyway...`)
+    }
+    
     // Transcribe audio using Whisper
     console.log('🎤 Transcribing audio with Whisper...')
-    const arrayBuffer = await response.arrayBuffer()
+    let arrayBuffer: ArrayBuffer
+    try {
+      arrayBuffer = await response.arrayBuffer()
+    } catch (bufferError: any) {
+      console.error('❌ Failed to read video buffer:', bufferError)
+      throw new Error(`Failed to read video data: ${bufferError.message || 'Unknown error'}`)
+    }
     
     if (!arrayBuffer || arrayBuffer.byteLength === 0) {
       throw new Error('Downloaded video is empty (0 bytes)')
     }
     
-    console.log(`📊 Downloaded video size: ${(arrayBuffer.byteLength / 1024 / 1024).toFixed(2)}MB`)
+    const videoSizeMB = (arrayBuffer.byteLength / 1024 / 1024).toFixed(2)
+    console.log(`📊 Downloaded video size: ${videoSizeMB}MB`)
+    
+    // Check file size (Whisper has 25MB limit)
+    if (arrayBuffer.byteLength > 25 * 1024 * 1024) {
+      console.warn(`⚠️ Video is ${videoSizeMB}MB, Whisper API limit is 25MB. May need to trim or compress.`)
+    }
     
     // Save to temp file for Whisper API
     const tempDir = getTempDir()
