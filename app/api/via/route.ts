@@ -14,6 +14,7 @@ import { validateVideoOperation, validatePublicId, sanitizeInput } from '@/lib/v
 import { handleApiError, ValidationError, ProcessingError, logError } from '@/lib/errorHandler'
 import { createRateLimiter } from '@/lib/rateLimiter'
 import { createVideoProcessingTracker } from '@/lib/progressTracker'
+import { getMusicUrlFromPreset } from '@/lib/freesound'
 
 // Route configuration for Vercel
 export const dynamic = 'force-dynamic'
@@ -808,12 +809,45 @@ export async function POST(request: NextRequest) {
       ].includes(instruction.operation) || hasTimeRange // Force FFmpeg if time-based
       const isCaptions = instruction.operation === 'addCaptions' || instruction.operation === 'customSubtitle'
       
+      // Special handling for addMusic: Fetch music URL from Freesound if preset provided
+      if (instruction.operation === 'addMusic' && instruction.params?.preset && !instruction.params?.musicUrl) {
+        console.log(`🎵 Fetching music URL for preset: ${instruction.params.preset}`)
+        try {
+          // Get video duration for better music matching
+          let videoDuration: number | undefined
+          if (inputVideoUrl) {
+            try {
+              const resource = await cloudinary.api.resource(videoPublicId, {
+                resource_type: isImage ? 'image' : 'video',
+              })
+              videoDuration = resource.duration || undefined
+            } catch (e) {
+              // Ignore errors getting duration
+            }
+          }
+
+          const musicUrl = await getMusicUrlFromPreset(instruction.params.preset, videoDuration)
+          if (musicUrl) {
+            console.log(`✅ Found music URL for preset "${instruction.params.preset}": ${musicUrl}`)
+            instruction.params.musicUrl = musicUrl
+          } else {
+            console.warn(`⚠️ Could not find music URL for preset "${instruction.params.preset}" - will enhance existing audio`)
+          }
+        } catch (musicError: any) {
+          console.error('❌ Error fetching music from Freesound:', musicError)
+          // Continue without music URL - Render API will enhance existing audio
+        }
+      }
+
       // Captions can be processed on Render API too (after Whisper transcription on Vercel)
       // The captions array is already generated, so we can send it to Render for FFmpeg processing
       if (needsFFmpeg && RENDER_API_URL) {
         console.log(`🌐 Using Render API for FFmpeg operation: ${instruction.operation}`)
         if (hasTimeRange) {
           console.log(`⏰ Time-based operation detected: startTime=${instruction.params?.startTime}, endTime=${instruction.params?.endTime}`)
+        }
+        if (instruction.operation === 'addMusic' && instruction.params?.musicUrl) {
+          console.log(`🎵 Music URL will be downloaded and mixed: ${instruction.params.musicUrl}`)
         }
         console.log(`🌐 Render API URL: ${RENDER_API_URL}`)
         console.log(`🌐 Input video URL: ${inputVideoUrl}`)
