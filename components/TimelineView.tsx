@@ -37,6 +37,14 @@ interface TimelineViewProps {
   multiTrack?: boolean // Enable multi-track mode
 }
 
+const generateClipId = (prefix: string = 'clip'): string => {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return `${prefix}_${crypto.randomUUID()}`
+  }
+  const random = Math.random().toString(36).slice(2, 8)
+  return `${prefix}_${Date.now()}_${random}`
+}
+
 export default function TimelineView({ 
   videoPublicId,
   videoUrl,
@@ -77,7 +85,7 @@ export default function TimelineView({
         ? generateClipName(0, duration, videoName)
         : `Main Video (0:00-${formatTime(duration)})`
       setClips([{
-        id: `clip_${Date.now()}`,
+        id: generateClipId(),
         start: 0,
         end: duration,
         name: defaultName,
@@ -137,7 +145,7 @@ export default function TimelineView({
         
         setClips([
           {
-            id: `clip_0_${Date.now()}`,
+            id: generateClipId('clip_0'),
             start: 0,
             end: midpoint,
             name: clip1Name,
@@ -146,7 +154,7 @@ export default function TimelineView({
             track: 'video',
           },
           {
-            id: `clip_1_${Date.now()}`,
+            id: generateClipId('clip_1'),
             start: midpoint,
             end: duration,
             name: clip2Name,
@@ -215,8 +223,8 @@ export default function TimelineView({
             if (prevClip) {
               // Split the previous clip at its end (which is this boundary)
               const splitTimeActual = prevClip.end
-              const newClipId1 = `clip_${Date.now()}_1`
-              const newClipId2 = `clip_${Date.now()}_2`
+              const newClipId1 = generateClipId()
+              const newClipId2 = generateClipId()
               
               const clip1Name = generateClipName(prevClip.start, splitTimeActual, videoName)
               const clip2Name = generateClipName(splitTimeActual, prevClip.end, videoName)
@@ -256,8 +264,8 @@ export default function TimelineView({
             : time
           
           if (splitTimeActual > clipStartTime && splitTimeActual < clipEndTime) {
-            const newClipId1 = `clip_${Date.now()}_1`
-            const newClipId2 = `clip_${Date.now()}_2`
+            const newClipId1 = generateClipId()
+            const newClipId2 = generateClipId()
             
             const clip1Name = generateClipName(clipStartTime, splitTimeActual, videoName)
             const clip2Name = generateClipName(splitTimeActual, clipEndTime, videoName)
