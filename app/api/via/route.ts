@@ -1045,31 +1045,80 @@ async function processCaptionsGeneration(
     // Use Whisper with timestamped output for better accuracy
     let transcription: any
     try {
+      // Read file as buffer first to ensure it's valid
+      const fileBuffer = fs.readFileSync(tempFilePath)
+      if (!fileBuffer || fileBuffer.length === 0) {
+        throw new Error('Temp file is empty or invalid')
+      }
+      
+      // Create a readable stream for OpenAI API (Node.js compatible)
       const fileStream = fs.createReadStream(tempFilePath)
-      // Try verbose_json first for timestamps
+      
+      // Try verbose_json first for timestamps (best option)
       try {
+        console.log('🎤 Attempting Whisper API with verbose_json format...')
         transcription = await openai.audio.transcriptions.create({
           file: fileStream as any,
           model: 'whisper-1',
-          response_format: 'verbose_json', // Get timestamps
-          timestamp_granularities: ['segment'], // Get segment-level timestamps
+          response_format: 'verbose_json',
+          timestamp_granularities: ['segment'],
         })
         console.log('✅ Whisper API call successful with verbose_json format')
-      } catch (verboseError: any) {
-        // Fallback to regular text format if verbose_json fails
-        console.warn('⚠️ verbose_json format failed, trying text format:', verboseError.message)
-        const fileStream2 = fs.createReadStream(tempFilePath)
-        const textTranscription = await openai.audio.transcriptions.create({
-          file: fileStream2 as any,
-          model: 'whisper-1',
-          response_format: 'text',
+        console.log('📊 Response structure:', {
+          hasText: !!transcription.text,
+          hasSegments: !!transcription.segments,
+          segmentCount: transcription.segments?.length || 0,
         })
-        // Convert text response to expected format
-        transcription = {
-          text: typeof textTranscription === 'string' ? textTranscription : (textTranscription as any).text || '',
-          segments: [], // No segments in text format
+      } catch (verboseError: any) {
+        console.warn('⚠️ verbose_json with granularities failed:', verboseError.message)
+        console.warn('⚠️ Error code:', verboseError.code, 'Status:', verboseError.status)
+        
+        // Fallback 1: Try verbose_json without timestamp_granularities
+        try {
+          console.log('🔄 Trying verbose_json without timestamp_granularities...')
+          const fileStream2 = fs.createReadStream(tempFilePath)
+          transcription = await openai.audio.transcriptions.create({
+            file: fileStream2 as any,
+            model: 'whisper-1',
+            response_format: 'verbose_json',
+          })
+          console.log('✅ Whisper API call successful with verbose_json (no granularities)')
+        } catch (verboseError2: any) {
+          console.warn('⚠️ verbose_json without granularities also failed:', verboseError2.message)
+          
+          // Fallback 2: Try json format
+          try {
+            console.log('🔄 Trying json format...')
+            const fileStream3 = fs.createReadStream(tempFilePath)
+            transcription = await openai.audio.transcriptions.create({
+              file: fileStream3 as any,
+              model: 'whisper-1',
+              response_format: 'json',
+            })
+            console.log('✅ Whisper API call successful with json format')
+            // json format might not have segments
+            if (!transcription.segments && transcription.text) {
+              transcription.segments = []
+            }
+          } catch (jsonError: any) {
+            console.warn('⚠️ json format also failed:', jsonError.message)
+            
+            // Fallback 3: Use text format (last resort - no timestamps)
+            console.log('🔄 Trying text format (last resort, no timestamps)...')
+            const fileStream4 = fs.createReadStream(tempFilePath)
+            const textTranscription = await openai.audio.transcriptions.create({
+              file: fileStream4 as any,
+              model: 'whisper-1',
+              response_format: 'text',
+            })
+            // Convert text response to expected format
+            transcription = {
+              text: typeof textTranscription === 'string' ? textTranscription : String(textTranscription),
+              segments: [], // No segments in text format
+            }
+            console.log('✅ Whisper API call successful with text format (fallback)')
+          }
         }
-        console.log('✅ Whisper API call successful with text format (fallback)')
       }
     } catch (whisperError: any) {
       // Cleanup temp file before throwing
@@ -1082,7 +1131,14 @@ async function processCaptionsGeneration(
       }
       
       console.error('❌ Whisper API error:', whisperError)
-      throw new Error(`Whisper transcription failed: ${whisperError.message || 'Unknown error'}`)
+      console.error('❌ Error details:', {
+        message: whisperError.message,
+        status: whisperError.status,
+        code: whisperError.code,
+        type: whisperError.type,
+        response: whisperError.response,
+      })
+      throw new Error(`Whisper transcription failed: ${whisperError.message || 'Unknown error'}. Please check OpenAI API key and video file.`)
     }
     
     // Cleanup temp file
