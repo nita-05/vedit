@@ -888,7 +888,20 @@ export async function POST(request: NextRequest) {
                                 processError?.code === 'ENOENT'
           
           // Try Cloudinary fallback for supported operations
+          // BUT: Time-based effects CANNOT use Cloudinary fallback (Cloudinary doesn't support time ranges)
           if (isFFmpegError) {
+            if (hasTimeRange) {
+              console.error('❌ Time-based effects require FFmpeg. Cloudinary fallback not supported.')
+              return NextResponse.json(
+                { 
+                  error: 'Time-based effect processing failed',
+                  message: `Time-based effects (with startTime/endTime) require FFmpeg processing, but FFmpeg is unavailable. Please ensure Render API is configured or FFmpeg is available locally.`,
+                  videoUrl: null,
+                },
+                { status: 500 }
+              )
+            }
+            
             console.log('🔄 FFmpeg failed, attempting Cloudinary fallback...')
             try {
               processedUrl = await processWithCloudinaryFallback(videoPublicId, instruction, isImage, inputVideoUrl)
