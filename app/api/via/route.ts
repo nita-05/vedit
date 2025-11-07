@@ -38,6 +38,46 @@ cloudinary.config({
 
 const videoProcessor = new VideoProcessor()
 
+function normalizeInstructionParams(instruction: any) {
+  if (!instruction || typeof instruction !== 'object') {
+    return
+  }
+
+  if (typeof instruction.operation === 'string') {
+    instruction.operation = instruction.operation.trim()
+  }
+
+  if (!instruction.params || typeof instruction.params !== 'object') {
+    instruction.params = {}
+    return
+  }
+
+  const params = instruction.params
+
+  for (const key of Object.keys(params)) {
+    const value = params[key]
+
+    if (value === undefined || value === null) {
+      delete params[key]
+      continue
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim()
+      if (trimmed === '') {
+        delete params[key]
+        continue
+      }
+      params[key] = trimmed
+      continue
+    }
+
+    if (Array.isArray(value)) {
+      params[key] = value.filter((item) => item !== undefined && item !== null)
+    }
+  }
+}
+
 // Helper function to get writable temp directory (works on Vercel and local)
 function getTempDir(): string {
   const isVercel = process.env.VERCEL === '1'
@@ -529,7 +569,8 @@ export async function POST(request: NextRequest) {
         max_tokens: 500,
         temperature: 0.3,
       })
-    } catch (openaiError: any) {
+    } catch (error) {
+      const openaiError = error as any
       logError(openaiError, { operation: 'openai_api_call', prompt: sanitizedPrompt.substring(0, 100) })
       
       if (openaiError.code === 'ENOTFOUND' || openaiError.type === 'system') {
@@ -836,7 +877,8 @@ export async function POST(request: NextRequest) {
           } else {
             console.warn(`⚠️ Could not find music URL for preset "${instruction.params.preset}" - will enhance existing audio`)
           }
-        } catch (musicError: any) {
+        } catch (error) {
+          const musicError = error as any
           console.error('❌ Error fetching music from Freesound:', musicError)
           // Continue without music URL - Render API will enhance existing audio
         }
@@ -891,7 +933,8 @@ export async function POST(request: NextRequest) {
           } else {
             throw new Error(renderData.message || renderData.error || 'Render API processing failed')
           }
-        } catch (renderError: any) {
+        } catch (error) {
+          const renderError = error as any
           if (renderError.name === 'AbortError') {
             console.error('❌ Render API timeout after 5 minutes')
           } else {
@@ -908,7 +951,8 @@ export async function POST(request: NextRequest) {
         try {
           processedUrl = await processVideoEdit(videoPublicId, instruction, inputVideoUrl, isImage)
           console.log(`✅ ${isImage ? 'Image' : 'Video'} processed successfully with FFmpeg:`, processedUrl)
-        } catch (processError: any) {
+        } catch (error) {
+          const processError = error as any
           console.error('❌ FFmpeg processing failed:', processError)
           console.error('📋 Error details:', {
             message: processError?.message,
@@ -943,7 +987,8 @@ export async function POST(request: NextRequest) {
             try {
               processedUrl = await processWithCloudinaryFallback(videoPublicId, instruction, isImage, inputVideoUrl)
               console.log(`✅ Processed with Cloudinary fallback: ${processedUrl}`)
-            } catch (cloudinaryError: any) {
+            } catch (error) {
+              const cloudinaryError = error as any
               console.error('❌ Cloudinary fallback also failed:', cloudinaryError)
               // Return error with both failures
               return NextResponse.json(
@@ -1076,7 +1121,8 @@ async function processCaptionsGeneration(
       if (!response.ok) {
         throw new Error(`Failed to download video for transcription: ${response.status} ${response.statusText}`)
       }
-    } catch (fetchError: any) {
+    } catch (error) {
+      const fetchError = error as any
       console.error('❌ Video download error:', fetchError)
       throw new Error(`Failed to download video: ${fetchError.message || 'Network error'}`)
     }
@@ -1095,7 +1141,8 @@ async function processCaptionsGeneration(
     let arrayBuffer: ArrayBuffer
     try {
       arrayBuffer = await response.arrayBuffer()
-    } catch (bufferError: any) {
+    } catch (error) {
+      const bufferError = error as any
       console.error('❌ Failed to read video buffer:', bufferError)
       throw new Error(`Failed to read video data: ${bufferError.message || 'Unknown error'}`)
     }
@@ -1144,91 +1191,115 @@ async function processCaptionsGeneration(
       // Create a readable stream for OpenAI API (Node.js compatible)
       const fileStream = fs.createReadStream(tempFilePath)
       
-      // Try verbose_json first for timestamps (best option)
-      try {
-        console.log('🎤 Attempting Whisper API with verbose_json format...')
-        transcription = await openai.audio.transcriptions.create({
-          file: fileStream as any,
-          model: 'whisper-1',
-          response_format: 'verbose_json',
-          timestamp_granularities: ['segment'],
-        })
-        console.log('✅ Whisper API call successful with verbose_json format')
-        console.log('📊 Response structure:', {
-          hasText: !!transcription.text,
-          hasSegments: !!transcription.segments,
-          segmentCount: transcription.segments?.length || 0,
-        })
-      } catch (verboseError: any) {
-        console.warn('⚠️ verbose_json with granularities failed:', verboseError.message)
-        console.warn('⚠️ Error code:', verboseError.code, 'Status:', verboseError.status)
-        
-        // Fallback 1: Try verbose_json without timestamp_granularities
-        try {
-          console.log('🔄 Trying verbose_json without timestamp_granularities...')
-          const fileStream2 = fs.createReadStream(tempFilePath)
-          transcription = await openai.audio.transcriptions.create({
-            file: fileStream2 as any,
-            model: 'whisper-1',
-            response_format: 'verbose_json',
-          })
-          console.log('✅ Whisper API call successful with verbose_json (no granularities)')
-        } catch (verboseError2: any) {
-          console.warn('⚠️ verbose_json without granularities also failed:', verboseError2.message)
-          
-          // Fallback 2: Try json format
-          try {
-            console.log('🔄 Trying json format...')
-            const fileStream3 = fs.createReadStream(tempFilePath)
-            transcription = await openai.audio.transcriptions.create({
-              file: fileStream3 as any,
-              model: 'whisper-1',
-              response_format: 'json',
+      const whisperAttempts = [
+        {
+          startLog: '🎤 Attempting Whisper API with verbose_json format...',
+          request: { response_format: 'verbose_json', timestamp_granularities: ['segment'] as const },
+          onSuccess: (result: any) => {
+            console.log('✅ Whisper API call successful with verbose_json format')
+            console.log('📊 Response structure:', {
+              hasText: !!result.text,
+              hasSegments: !!result.segments,
+              segmentCount: result.segments?.length || 0,
             })
+            return result
+          },
+          onError: (err: any) => {
+            console.warn('⚠️ verbose_json with granularities failed:', err.message)
+            console.warn('⚠️ Error code:', err.code, 'Status:', err.status)
+          },
+        },
+        {
+          startLog: '🔄 Trying verbose_json without timestamp_granularities...',
+          request: { response_format: 'verbose_json' as const },
+          onSuccess: (result: any) => {
+            console.log('✅ Whisper API call successful with verbose_json (no granularities)')
+            return result
+          },
+          onError: (err: any) => {
+            console.warn('⚠️ verbose_json without granularities also failed:', err.message)
+          },
+        },
+        {
+          startLog: '🔄 Trying json format...',
+          request: { response_format: 'json' as const },
+          onSuccess: (result: any) => {
             console.log('✅ Whisper API call successful with json format')
-            // json format might not have segments
-            if (!transcription.segments && transcription.text) {
-              transcription.segments = []
+            if (!result.segments && result.text) {
+              result.segments = []
             }
-          } catch (jsonError: any) {
-            console.warn('⚠️ json format also failed:', jsonError.message)
-            
-            // Fallback 3: Use text format (last resort - no timestamps)
-            console.log('🔄 Trying text format (last resort, no timestamps)...');
-            const fileStream4 = fs.createReadStream(tempFilePath);
-            const textTranscription = await openai.audio.transcriptions.create({
-              file: fileStream4 as any,
-              model: 'whisper-1',
-              response_format: 'text',
-            });
-            // Convert text response to expected format
-            transcription = {
-              text: typeof textTranscription === 'string' ? textTranscription : String(textTranscription),
-              segments: [], // No segments in text format
-            };
-            console.log('✅ Whisper API call successful with text format (fallback)');
-          }
+            return result
+          },
+          onError: (err: any) => {
+            console.warn('⚠️ json format also failed:', err.message)
+          },
+        },
+        {
+          startLog: '🔄 Trying text format (last resort, no timestamps)...',
+          request: { response_format: 'text' as const },
+          onSuccess: (result: any) => {
+            const textResponse = typeof result === 'string' ? result : String(result)
+            const normalized = {
+              text: textResponse,
+              segments: [] as any[],
+            }
+            console.log('✅ Whisper API call successful with text format (fallback)')
+            return normalized
+          },
+          onError: (err: any) => {
+            console.warn('⚠️ text format also failed:', err.message)
+          },
+        },
+      ]
+
+      let lastWhisperError: any
+      for (const attempt of whisperAttempts) {
+        if (transcription) {
+          break
         }
-      } catch (whisperError: any) {
-        // Cleanup temp file before throwing
+
         try {
-          if (fs.existsSync(tempFilePath)) {
-            fs.unlinkSync(tempFilePath)
+          console.log(attempt.startLog)
+          const attemptStream = fs.createReadStream(tempFilePath)
+          const result = await openai.audio.transcriptions.create({
+            file: attemptStream as any,
+            model: 'whisper-1',
+            ...(attempt.request as Record<string, any>),
+          })
+          transcription = attempt.onSuccess ? attempt.onSuccess(result) : result
+        } catch (error) {
+          const attemptError = error as any
+          lastWhisperError = attemptError
+          if (attempt.onError) {
+            attempt.onError(attemptError)
           }
-        } catch (cleanupError) {
-          console.error('Failed to cleanup temp file:', cleanupError)
         }
-        
-        console.error('❌ Whisper API error:', whisperError)
-        console.error('❌ Error details:', {
-          message: whisperError.message,
-          status: whisperError.status,
-          code: whisperError.code,
-          type: whisperError.type,
-          response: whisperError.response,
-        })
-        throw new Error(`Whisper transcription failed: ${whisperError.message || 'Unknown error'}. Please check OpenAI API key and video file.`)
       }
+
+      if (!transcription) {
+        throw lastWhisperError || new Error('Whisper transcription failed with all response formats')
+      }
+    } catch (error) {
+      const whisperError = error as any
+      // Cleanup temp file before throwing
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath)
+        }
+      } catch (cleanupError) {
+        console.error('Failed to cleanup temp file:', cleanupError)
+      }
+      
+      console.error('❌ Whisper API error:', whisperError)
+      console.error('❌ Error details:', {
+        message: whisperError.message,
+        status: whisperError.status,
+        code: whisperError.code,
+        type: whisperError.type,
+        response: whisperError.response,
+      })
+      throw new Error(`Whisper transcription failed: ${whisperError.message || 'Unknown error'}. Please check OpenAI API key and video file.`)
+    }
       
       // Cleanup temp file
       try {
@@ -1287,7 +1358,8 @@ async function processCaptionsGeneration(
 
           const captionData = JSON.parse(captionCompletion.choices[0].message.content || '{}')
           captions = Array.isArray(captionData.captions) ? captionData.captions : []
-        } catch (gptError: any) {
+        } catch (error) {
+          const gptError = error as any
           console.error('⚠️ GPT caption generation failed:', gptError)
           // Continue to fallback
         }
@@ -1399,7 +1471,8 @@ async function processCaptionsGeneration(
           } else {
             throw new Error(renderData.message || renderData.error || 'Render API processing failed')
           }
-        } catch (renderError: any) {
+        } catch (error) {
+          const renderError = error as any
           if (renderError.name === 'AbortError') {
             console.error('❌ Render API timeout after 5 minutes')
             throw new Error('Render API timeout: Caption processing took too long (5+ minutes). Please try with a shorter video or check Render API status.')
@@ -1443,7 +1516,8 @@ async function processCaptionsGeneration(
         const processedUrl = await videoProcessor.process(inputVideoUrl, instruction)
         console.log(`✅ Captions processed locally: ${processedUrl}`)
         return processedUrl
-      } catch (localError: any) {
+      } catch (error) {
+        const localError = error as any
         console.error('❌ Local videoProcessor failed:', localError)
         console.error('❌ Local error details:', {
           message: localError.message,
@@ -1465,17 +1539,6 @@ async function processCaptionsGeneration(
         `Please check server logs for more details.`
       )
     }
-  } catch (error) {
-    console.error('❌ Caption generation error:', error)
-    console.error('❌ Error stack:', error instanceof Error ? error.stack : 'No stack trace')
-    // DO NOT return original video - throw error instead
-    // This ensures the frontend knows processing failed and doesn't show original as processed
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    throw new Error(
-      `Caption generation failed: ${errorMessage}. ` +
-      `Please check server logs for more details.`
-    )
-  }
 }
 
 /**
@@ -1748,32 +1811,33 @@ async function processVideoEdit(
     console.log(`✅ Processed ${resourceType} URL: ${processedUrl}`)
 
     return processedUrl
-  } catch (error: any) {
-    console.error(`❌ ${isImage ? 'Image' : 'Video'} processing error:`, error)
+  } catch (error) {
+    const processingError = error as any
+    console.error(`❌ ${isImage ? 'Image' : 'Video'} processing error:`, processingError)
     console.error('📋 Error details:', {
-      message: error?.message,
-      stack: error?.stack,
-      code: error?.code,
-      name: error?.name,
-      fullError: JSON.stringify(error, Object.getOwnPropertyNames(error))
+      message: processingError?.message,
+      stack: processingError?.stack,
+      code: processingError?.code,
+      name: processingError?.name,
+      fullError: JSON.stringify(processingError, Object.getOwnPropertyNames(processingError))
     })
     
     // Check if it's an FFmpeg-related error (common on Vercel)
-    const errorMessage = error?.message?.toLowerCase() || ''
+    const errorMessage = processingError?.message?.toLowerCase() || ''
     const isFFmpegError = errorMessage.includes('ffmpeg') || 
                           errorMessage.includes('spawn') || 
                           errorMessage.includes('enoent') ||
-                          error?.code === 'ENOENT'
+                          processingError?.code === 'ENOENT'
     
     if (isFFmpegError) {
-      console.error('⚠️ FFmpeg error detected:', error?.message)
+      console.error('⚠️ FFmpeg error detected:', processingError?.message)
       console.error('💡 Check FFmpeg installation and path configuration')
     }
     
     // Throw error with detailed information for debugging
     throw new Error(
-      `Video processing failed: ${error?.message || 'Unknown error'}. ` +
-      `Error code: ${error?.code || 'N/A'}. ` +
+      `Video processing failed: ${processingError?.message || 'Unknown error'}. ` +
+      `Error code: ${processingError?.code || 'N/A'}. ` +
       `Please check server logs for more details.`
     )
   }
