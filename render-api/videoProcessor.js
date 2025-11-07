@@ -1048,12 +1048,15 @@ class VideoProcessor {
             case 'zoom':
             case 'zoom in':
             case 'zoom out':
-              const zoomFactor = safePreset.includes('out') ? 0.9 : 1.15
+              const zoomFactor = safePreset.includes('out') ? 0.94 : 1.08
               const zoomStart = startTime !== undefined ? startTime : 0
-              const zoomDuration = Math.max(0.1, Math.min(endTime !== undefined && endTime > zoomStart ? endTime - zoomStart : safeDuration, 10.0))
+              const allowedDuration = Math.max(0.1, Math.min(endTime !== undefined && endTime > zoomStart ? endTime - zoomStart : safeDuration, 10.0))
+              const zoomDuration = Math.min(allowedDuration, 1.0)
               const zoomEnd = zoomStart + zoomDuration
 
-              const scaleFilter = `scale=ceil(in_w*${zoomFactor}/2)*2:ceil(in_h*${zoomFactor}/2)*2:flags=lanczos:eval=frame:enable='between(t,${zoomStart},${zoomEnd})'`
+              console.log(`⚙️ Zoom transition normalized duration: requested=${allowedDuration}s, applied=${zoomDuration}s`)
+
+              const scaleFilter = `scale=ceil(in_w*${zoomFactor}/2)*2:ceil(in_h*${zoomFactor}/2)*2:flags=bicubic:eval=frame:enable='between(t,${zoomStart},${zoomEnd})'`
               const cropWidth = `floor(in_w/${zoomFactor}/2)*2`
               const cropHeight = `floor(in_h/${zoomFactor}/2)*2`
               const cropX = `(in_w-${cropWidth})/2`
