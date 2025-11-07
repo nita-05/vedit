@@ -228,8 +228,46 @@ async function processVideo(inputPath, outputPath, instruction, publicId) {
   // Check if it's an image by file extension
   const isImage = /\.(jpg|jpeg|png|gif|webp)$/i.test(inputPath)
   
-  // Process with VideoProcessor
-  await processor.process(inputPath, outputPath, instruction, isImage)
+  // Handle music mixing if musicUrl is provided
+  let musicPath = null
+  if (instruction.operation === 'addMusic' && instruction.params?._musicUrl) {
+    try {
+      const musicUrl = instruction.params._musicUrl
+      console.log(`📥 Downloading music from: ${musicUrl}`)
+      const musicResponse = await fetch(musicUrl)
+      if (!musicResponse.ok) {
+        throw new Error(`Failed to download music: ${musicResponse.statusText}`)
+      }
+      
+      const musicBuffer = Buffer.from(await musicResponse.arrayBuffer())
+      musicPath = path.join(os.tmpdir(), `music_${Date.now()}.mp3`)
+      fs.writeFileSync(musicPath, musicBuffer)
+      console.log(`✅ Downloaded music: ${musicPath} (${(musicBuffer.length / 1024 / 1024).toFixed(2)} MB)`)
+      
+      // Pass music path to processor
+      instruction.params._musicPath = musicPath
+    } catch (musicError) {
+      console.error(`❌ Failed to download music: ${musicError.message}`)
+      console.log(`⚠️ Continuing without music mixing, will enhance existing audio instead`)
+      // Remove music URL so processor doesn't try to use it
+      delete instruction.params._musicUrl
+    }
+  }
+  
+  try {
+    // Process with VideoProcessor
+    await processor.process(inputPath, outputPath, instruction, isImage)
+  } finally {
+    // Cleanup music file
+    if (musicPath && fs.existsSync(musicPath)) {
+      try {
+        fs.unlinkSync(musicPath)
+        console.log(`🧹 Cleaned up music file: ${musicPath}`)
+      } catch (cleanupError) {
+        console.warn(`⚠️ Failed to cleanup music file: ${cleanupError.message}`)
+      }
+    }
+  }
   
   // Upload to Cloudinary
   const result = await cloudinary.uploader.upload(outputPath, {

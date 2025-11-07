@@ -383,6 +383,43 @@ class VideoProcessor {
         command = command.inputOptions(['-loop', '1', '-t', '1'])
       }
       
+      // Handle music mixing BEFORE other operations (if music path is provided)
+      let hasMusicMixing = false
+      if (instruction.operation === 'addMusic' && instruction.params?._musicPath) {
+        const musicPath = instruction.params._musicPath
+        const musicVolume = instruction.params._musicVolume || 0.3
+        const musicStartTime = instruction.params._musicStartTime
+        const musicEndTime = instruction.params._musicEndTime
+        
+        console.log(`🎵 Adding music file as second input: ${musicPath}`)
+        
+        // Add music as second input
+        command = command.input(musicPath)
+        
+        // Use complex filter to mix audio tracks
+        // [0:a] = original video audio (input 0, audio stream)
+        // [1:a] = music audio (input 1, audio stream)
+        // amix = mix both audio tracks
+        let amixFilter = ''
+        
+        // If time range specified, trim music to that range
+        if (musicStartTime !== undefined && musicEndTime !== undefined && musicEndTime > musicStartTime) {
+          // Trim music to time range, then mix
+          amixFilter = `[1:a]atrim=${musicStartTime}:${musicEndTime},asetpts=PTS-STARTPTS,volume=${musicVolume}[music];[0:a][music]amix=inputs=2:duration=first:dropout_transition=2[outa]`
+        } else {
+          // Mix full music track with video audio
+          amixFilter = `[1:a]volume=${musicVolume}[musicvol];[0:a][musicvol]amix=inputs=2:duration=first:dropout_transition=2[outa]`
+        }
+        
+        // Apply complex filter and map outputs
+        command = command
+          .complexFilter(amixFilter)
+          .outputOptions(['-map', '0:v', '-map', '[outa]'])
+        
+        hasMusicMixing = true
+        console.log(`✅ Music mixing filter applied: ${amixFilter}`)
+      }
+      
       // Apply operation
       switch (instruction.operation) {
         case 'trim': {
@@ -606,30 +643,33 @@ class VideoProcessor {
           
           console.log(`🎵 Adding music: ${preset || 'default'} (volume: ${safeVolume})`)
           
-          // If musicUrl is provided, download and mix it
+          // If musicUrl is provided, store it for download and mixing
+          // The actual mixing happens in the process() method using complex filters
           if (musicUrl && typeof musicUrl === 'string' && musicUrl.startsWith('http')) {
-            console.log(`📥 Music URL provided, will download and mix: ${musicUrl}`)
-            // Note: Full implementation would require:
-            // 1. Download music file
-            // 2. Use complex filter to mix audio: [0:a][1:a]amix=inputs=2:duration=first:dropout_transition=2[outa]
-            // 3. Map the mixed audio to output
-            // For now, we'll apply volume adjustment to existing audio
-            console.log(`⚠️ Music URL mixing not yet fully implemented. Applying volume adjustment to existing audio.`)
+            console.log(`📥 Music URL provided: ${musicUrl}`)
+            // Store music parameters for processing
+            instruction.params._musicUrl = musicUrl
+            instruction.params._musicVolume = safeVolume
+            instruction.params._musicStartTime = startTime
+            instruction.params._musicEndTime = endTime
+            instruction.params._musicLoop = loop
+            console.log(`✅ Music URL stored - will be downloaded and mixed during processing`)
+            // Don't apply any filters here - mixing will be done in process() method
+          } else {
+            // No music URL provided - enhance existing audio as fallback
+            // This simulates music addition by enhancing the existing track
+            let audioFilter = `volume=${safeVolume}`
+            
+            // If there's a time range, apply it
+            if (startTime !== undefined && endTime !== undefined && endTime > startTime) {
+              audioFilter = `volume=${safeVolume}:enable='between(t,${startTime},${endTime})'`
+            }
+            
+            command = command.audioFilters(audioFilter)
+            console.log(`✅ Applied audio enhancement filter: ${audioFilter}`)
+            console.log(`ℹ️ Note: To add actual background music, provide a musicUrl parameter.`)
+            console.log(`ℹ️ You can use royalty-free music from: Freesound, Jamendo, or upload your own music.`)
           }
-          
-          // Apply audio normalization and volume adjustment
-          // This enhances the existing audio to simulate music addition
-          // For full music mixing, we need to download the music file and use amix filter
-          let audioFilter = `volume=${safeVolume}`
-          
-          // If there's a time range, apply it
-          if (startTime !== undefined && endTime !== undefined && endTime > startTime) {
-            audioFilter = `volume=${safeVolume}:enable='between(t,${startTime},${endTime})'`
-          }
-          
-          command = command.audioFilters(audioFilter)
-          console.log(`✅ Applied audio filter: ${audioFilter}`)
-          console.log(`ℹ️ Note: Full music mixing requires music file library. Currently enhancing existing audio.`)
           break
         }
         
@@ -638,8 +678,10 @@ class VideoProcessor {
           // Pass through without modification
       }
       
+      // Set output path (music mixing already configured output options above)
+      command = command.output(outputPath)
+      
       command
-        .output(outputPath)
         .on('start', (cmdline) => {
           console.log('📹 FFmpeg command:', cmdline)
         })
