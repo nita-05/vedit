@@ -1199,17 +1199,17 @@ async function processCaptionsGeneration(
             
             // Fallback 3: Use text format (last resort - no timestamps)
             console.log('🔄 Trying text format (last resort, no timestamps)...');
-            const fileStream4 = fs.createReadStream(tempFilePath)
+            const fileStream4 = fs.createReadStream(tempFilePath);
             const textTranscription = await openai.audio.transcriptions.create({
               file: fileStream4 as any,
               model: 'whisper-1',
               response_format: 'text',
-            })
+            });
             // Convert text response to expected format
             transcription = {
               text: typeof textTranscription === 'string' ? textTranscription : String(textTranscription),
               segments: [], // No segments in text format
-            }
+            };
             console.log('✅ Whisper API call successful with text format (fallback)');
           }
         }
