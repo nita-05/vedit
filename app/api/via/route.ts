@@ -989,13 +989,41 @@ async function processCaptionsGeneration(
     const tempFilePath = path.join(tempDir, `whisper_${Date.now()}.mp4`)
     fs.writeFileSync(tempFilePath, Buffer.from(arrayBuffer))
     
+    // Validate file was written
+    if (!fs.existsSync(tempFilePath)) {
+      throw new Error('Failed to write temp file for Whisper transcription')
+    }
+    
+    const fileStats = fs.statSync(tempFilePath)
+    if (fileStats.size === 0) {
+      throw new Error('Temp file for Whisper is empty (0 bytes)')
+    }
+    
+    console.log(`📁 Temp file created: ${tempFilePath} (${(fileStats.size / 1024 / 1024).toFixed(2)}MB)`)
+    
     // Use Whisper with timestamped output for better accuracy
-    const transcription = await openai.audio.transcriptions.create({
-      file: fs.createReadStream(tempFilePath) as any,
-      model: 'whisper-1',
-      response_format: 'verbose_json', // Get timestamps
-      timestamp_granularities: ['segment'], // Get segment-level timestamps
-    })
+    let transcription: any
+    try {
+      const fileStream = fs.createReadStream(tempFilePath)
+      transcription = await openai.audio.transcriptions.create({
+        file: fileStream as any,
+        model: 'whisper-1',
+        response_format: 'verbose_json', // Get timestamps
+        timestamp_granularities: ['segment'], // Get segment-level timestamps
+      })
+    } catch (whisperError: any) {
+      // Cleanup temp file before throwing
+      try {
+        if (fs.existsSync(tempFilePath)) {
+          fs.unlinkSync(tempFilePath)
+        }
+      } catch (cleanupError) {
+        console.error('Failed to cleanup temp file:', cleanupError)
+      }
+      
+      console.error('❌ Whisper API error:', whisperError)
+      throw new Error(`Whisper transcription failed: ${whisperError.message || 'Unknown error'}`)
+    }
     
     // Cleanup temp file
     try {
@@ -1006,63 +1034,84 @@ async function processCaptionsGeneration(
       console.error('Failed to cleanup temp file:', cleanupError)
     }
     
+    // Validate transcription response
+    if (!transcription) {
+      throw new Error('Whisper API returned empty response')
+    }
+    
+    if (!transcription.text && (!transcription.segments || transcription.segments.length === 0)) {
+      throw new Error('Whisper API returned no transcription text or segments')
+    }
+    
     console.log('📝 Transcription complete:', transcription.text?.substring(0, 100) + '...')
     console.log(`📊 Transcription segments: ${transcription.segments?.length || 0}`)
+    console.log(`📊 Transcription full response keys:`, Object.keys(transcription))
     
     // Generate timed captions from transcript with timestamps
     let captions: any[] = []
     
     // If we have segments with timestamps, use them directly
-    if (transcription.segments && transcription.segments.length > 0) {
+    if (transcription.segments && Array.isArray(transcription.segments) && transcription.segments.length > 0) {
       console.log('⏰ Using Whisper segment timestamps for captions...')
-      captions = transcription.segments.map((segment: any) => ({
-        text: (segment.text || '').trim(),
-        start: segment.start || 0,
-        end: segment.end || segment.start + 3,
-      }))
+      captions = transcription.segments
+        .filter((segment: any) => segment && segment.text && segment.text.trim().length > 0)
+        .map((segment: any) => ({
+          text: (segment.text || '').trim(),
+          start: typeof segment.start === 'number' ? segment.start : 0,
+          end: typeof segment.end === 'number' ? segment.end : (typeof segment.start === 'number' ? segment.start + 3 : 3),
+        }))
       console.log(`✅ Generated ${captions.length} caption segments from Whisper timestamps`)
-    } else {
-      // Fallback: Generate timed captions using GPT if no segments
-      console.log('⏰ Generating timed captions with GPT (no Whisper segments)...')
-      const captionCompletion = await openai.chat.completions.create({
-        model: process.env.OPENAI_MODEL || 'gpt-4o',
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a caption generator. Return JSON with "captions" array: [{"text": "...", "start": 0, "end": 3}]. Each caption should be 2-5 seconds long. Estimate timing based on text length (average 3 words per second).'
-          },
-          {
-            role: 'user',
-            content: `Generate timed captions from this transcript: "${transcription.text}". Split into logical phrases of 2-5 seconds each. IMPORTANT: Return ONLY the caption text, NO markdown formatting (no **, no *, no #). Just plain text for each caption.`
-          },
-        ],
-        response_format: { type: 'json_object' },
-      })
+    } else if (transcription.text && transcription.text.trim().length > 0) {
+      // Fallback: Generate timed captions using GPT if no segments but we have text
+      console.log('⏰ Generating timed captions with GPT (no Whisper segments, but have text)...')
+      try {
+        const captionCompletion = await openai.chat.completions.create({
+          model: process.env.OPENAI_MODEL || 'gpt-4o',
+          messages: [
+            {
+              role: 'system',
+              content: 'You are a caption generator. Return JSON with "captions" array: [{"text": "...", "start": 0, "end": 3}]. Each caption should be 2-5 seconds long. Estimate timing based on text length (average 3 words per second).'
+            },
+            {
+              role: 'user',
+              content: `Generate timed captions from this transcript: "${transcription.text}". Split into logical phrases of 2-5 seconds each. IMPORTANT: Return ONLY the caption text, NO markdown formatting (no **, no *, no #). Just plain text for each caption.`
+            },
+          ],
+          response_format: { type: 'json_object' },
+        })
 
-      const captionData = JSON.parse(captionCompletion.choices[0].message.content || '{}')
-      captions = Array.isArray(captionData.captions) ? captionData.captions : []
+        const captionData = JSON.parse(captionCompletion.choices[0].message.content || '{}')
+        captions = Array.isArray(captionData.captions) ? captionData.captions : []
+      } catch (gptError: any) {
+        console.error('⚠️ GPT caption generation failed:', gptError)
+        // Continue to fallback
+      }
       
       // If GPT didn't generate captions, create simple ones from transcript
       if (captions.length === 0 && transcription.text) {
         console.log('⚠️ GPT didn\'t generate captions, creating simple timed captions...')
-        const words = transcription.text.split(/\s+/)
-        const wordsPerSecond = 3 // Average speaking rate
-        let currentTime = 0
-        
-        // Split into chunks of ~9 words (3 seconds each)
-        for (let i = 0; i < words.length; i += 9) {
-          const chunk = words.slice(i, i + 9).join(' ')
-          const duration = chunk.split(/\s+/).length / wordsPerSecond
-          captions.push({
-            text: chunk,
-            start: currentTime,
-            end: currentTime + Math.max(duration, 2), // Minimum 2 seconds
-          })
-          currentTime += duration
+        const words = transcription.text.split(/\s+/).filter((w: string) => w.trim().length > 0)
+        if (words.length > 0) {
+          const wordsPerSecond = 3 // Average speaking rate
+          let currentTime = 0
+          
+          // Split into chunks of ~9 words (3 seconds each)
+          for (let i = 0; i < words.length; i += 9) {
+            const chunk = words.slice(i, i + 9).join(' ')
+            const duration = chunk.split(/\s+/).length / wordsPerSecond
+            captions.push({
+              text: chunk,
+              start: currentTime,
+              end: currentTime + Math.max(duration, 2), // Minimum 2 seconds
+            })
+            currentTime += duration
+          }
         }
       }
       
       console.log(`✅ Generated ${captions.length} caption segments`)
+    } else {
+      throw new Error('No transcription text or segments available from Whisper API')
     }
     
     // Validate captions
