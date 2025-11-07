@@ -902,6 +902,21 @@ export async function POST(request: NextRequest) {
     console.log('📤 VIA API: Sending response to frontend:')
     console.log('📤 Response data:', JSON.stringify(responseData, null, 2))
     console.log('📤 videoUrl:', processedUrl)
+    console.log('📤 Original video URL was:', inputVideoUrl)
+    console.log('📤 Processed video URL is:', processedUrl)
+    console.log('📤 URLs are different:', processedUrl !== inputVideoUrl)
+    
+    // CRITICAL: Ensure we're returning the processed URL, not the original
+    if (!processedUrl || processedUrl === inputVideoUrl) {
+      console.error('❌ CRITICAL ERROR: Processed URL is same as input URL or is null!')
+      console.error('❌ Input URL:', inputVideoUrl)
+      console.error('❌ Processed URL:', processedUrl)
+      return NextResponse.json({
+        error: 'Video processing failed',
+        message: 'Processed video URL is invalid or same as input. Processing may have failed.',
+        videoUrl: null,
+      }, { status: 500 })
+    }
     
     return NextResponse.json(responseData)
   } catch (error) {
