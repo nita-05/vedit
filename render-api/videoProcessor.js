@@ -308,7 +308,7 @@ class VideoProcessor {
    * Add text overlay
    */
   addTextOverlay(command, params) {
-    const { text, x, y, fontSize, color, startTime, endTime, position } = params
+    const { text = '', x, y, fontSize, color, startTime, endTime, position, style } = params
 
     let backgroundColor = params.backgroundColor || params.bgColor || (params.highlight ? (typeof params.highlight === 'string' ? params.highlight : 'yellow') : null)
     const highlightOpacityRaw = params.backgroundOpacity ?? params.highlightOpacity
@@ -327,72 +327,276 @@ class VideoProcessor {
     }
     boxBorderWidth = Math.max(0, boxBorderWidth)
 
-    // Escape special characters for drawtext
-    const escapedText = text.replace(/:/g, '\\:').replace(/'/g, "\\'")
-    
     // Parse position parameter if x/y not explicitly provided
     let xPos = x
     let yPos = y
-    
+
     if (!xPos || !yPos) {
       const pos = (position || '').toLowerCase()
-      
-      // Horizontal positioning
+
       if (!xPos) {
         if (pos.includes('left')) {
-          xPos = '10' // Left margin
+          xPos = '10'
         } else if (pos.includes('right')) {
-          xPos = '(w-text_w-10)' // Right margin
+          xPos = '(w-text_w-10)'
         } else {
-          xPos = '(w-text_w)/2' // Center (default)
+          xPos = '(w-text_w)/2'
         }
       }
-      
-      // Vertical positioning
+
       if (!yPos) {
         if (pos === 'top' || pos.includes('top')) {
-          yPos = '10' // Top margin
+          yPos = '10'
         } else if (pos === 'bottom' || pos.includes('bottom')) {
-          yPos = '(h-text_h-10)' // Bottom margin
+          yPos = '(h-text_h-10)'
         } else if (pos === 'center' || pos === 'centre') {
-          yPos = '(h-text_h)/2' // Center
+          yPos = '(h-text_h)/2'
         } else {
-          yPos = '(h-text_h)/2' // Default to center
+          yPos = '(h-text_h)/2'
         }
       }
     }
-    
-    const resolvedFontColor = this.normalizeDrawtextColor(color || 'white') || 'white'
-    const resolvedFontSize = this.parseFontSize(fontSize || params.size || 36)
-    let drawtextFilter = `drawtext=text='${escapedText}':fontsize=${resolvedFontSize}:fontcolor=${resolvedFontColor}:x=${xPos}:y=${yPos}`
+
+    const styleConfig = this.getTextStyleConfig(style)
+
+    let styledText = text
+    if (styleConfig.transform === 'uppercase') {
+      styledText = styledText.toUpperCase()
+    }
+
+    // Escape special characters for drawtext
+    const escapedText = styledText.replace(/:/g, '\\:').replace(/'/g, "\\'")
+
+    const resolvedFontSize = this.parseFontSize(fontSize || params.size || styleConfig.defaultFontSize || 36)
+    const baseFontColor = styleConfig.fontColor || color || 'white'
+    const resolvedFontColor = this.normalizeDrawtextColor(baseFontColor) || 'white'
+
+    const options = []
+    options.push(`text='${escapedText}'`)
+    options.push(`fontsize=${resolvedFontSize}`)
+    options.push(`fontcolor=${resolvedFontColor}`)
+    options.push(`x=${xPos}`)
+    options.push(`y=${yPos}`)
+
+    const fontPath = this.resolveFontPath(styleConfig.fontCandidates)
+    if (fontPath) {
+      const normalizedFontPath = fontPath.replace(/\\/g, '/').replace(/:/g, '\\:')
+      options.push(`fontfile='${normalizedFontPath}'`)
+    }
+
+    const borderWidth = styleConfig.borderWidth ?? params.borderWidth ?? params.outlineWidth ?? 0
+    if (borderWidth > 0) {
+      const borderColor = this.normalizeDrawtextColor(styleConfig.borderColor || params.borderColor || '#000000')
+      options.push(`borderw=${borderWidth}`)
+      if (borderColor) {
+        options.push(`bordercolor=${borderColor}`)
+      }
+    }
+
+    const shadowColor = this.normalizeDrawtextColor(styleConfig.shadowColor || params.shadowColor)
+    if (shadowColor) {
+      options.push(`shadowcolor=${shadowColor}`)
+      options.push(`shadowx=${styleConfig.shadowX ?? params.shadowX ?? 2}`)
+      options.push(`shadowy=${styleConfig.shadowY ?? params.shadowY ?? 2}`)
+    }
+
+    let boxRequired = false
+    let boxColorValue = null
+    let finalBoxBorderWidth = styleConfig.boxBorderWidth ?? boxBorderWidth
+    if (!Number.isFinite(finalBoxBorderWidth)) {
+      finalBoxBorderWidth = boxBorderWidth
+    }
+    finalBoxBorderWidth = Math.max(0, finalBoxBorderWidth)
 
     if (backgroundColor && typeof backgroundColor === 'string') {
       const lower = backgroundColor.toLowerCase().trim()
       if (!['none', 'transparent', 'clear', 'no'].includes(lower)) {
-        const mapped = this.normalizeDrawtextColor(backgroundColor, highlightOpacity)
-        if (mapped) {
-          drawtextFilter += `:box=1:boxcolor=${mapped}:boxborderw=${boxBorderWidth}`
-        }
+        boxColorValue = this.normalizeDrawtextColor(backgroundColor, highlightOpacity)
+        boxRequired = Boolean(boxColorValue)
       }
     } else if (params.highlight === true) {
-      const defaultBox = this.normalizeDrawtextColor('yellow', highlightOpacity)
-      drawtextFilter += `:box=1:boxcolor=${defaultBox}:boxborderw=${boxBorderWidth}`
+      boxColorValue = this.normalizeDrawtextColor(styleConfig.highlightColor || 'yellow', highlightOpacity)
+      boxRequired = Boolean(boxColorValue)
+    } else if (styleConfig.backgroundColor) {
+      boxColorValue = this.normalizeDrawtextColor(styleConfig.backgroundColor, styleConfig.backgroundOpacity ?? highlightOpacity)
+      finalBoxBorderWidth = styleConfig.boxBorderWidth ?? finalBoxBorderWidth
+      boxRequired = Boolean(boxColorValue)
     }
 
     if (params.box === true && params.boxColor) {
       const mapped = this.normalizeDrawtextColor(params.boxColor, highlightOpacity)
       if (mapped) {
-        drawtextFilter += `:box=1:boxcolor=${mapped}:boxborderw=${boxBorderWidth}`
+        boxColorValue = mapped
+        boxRequired = true
       }
     }
-    
+
+    if (boxRequired && boxColorValue) {
+      options.push('box=1')
+      options.push(`boxcolor=${boxColorValue}`)
+      options.push(`boxborderw=${finalBoxBorderWidth}`)
+    }
+
+    if (styleConfig.extraOptions && Array.isArray(styleConfig.extraOptions)) {
+      styleConfig.extraOptions.forEach((opt) => {
+        if (opt && typeof opt === 'string') {
+          options.push(opt)
+        }
+      })
+    }
+
+    let drawtextFilter = `drawtext=${options.join(':')}`
+
     if (startTime !== undefined || endTime !== undefined) {
       drawtextFilter = this.applyTimeBasedFilter(drawtextFilter, startTime, endTime)
     }
-    
-    console.log(`📝 Text overlay: "${text}" at position ${position || 'default'} (x=${xPos}, y=${yPos})`)
-    
+
+    console.log(`📝 Text overlay: "${text}" at position ${position || 'default'} (x=${xPos}, y=${yPos}) using style ${style || 'default'}`)
+
     return command.videoFilters(drawtextFilter)
+  }
+
+  resolveFontPath(preferredFonts = []) {
+    const candidates = [
+      ...(Array.isArray(preferredFonts) ? preferredFonts : []),
+      process.env.FONT_PATH,
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+      '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+      '/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf',
+      '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
+      '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
+      '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf'
+    ].filter(Boolean)
+
+    for (const candidate of candidates) {
+      try {
+        if (candidate && fs.existsSync(candidate)) {
+          return candidate
+        }
+      } catch (err) {
+        // Ignore access errors and continue checking other candidates
+      }
+    }
+    console.warn('⚠️ No custom font file found for drawtext. Falling back to FFmpeg default fonts.')
+    return null
+  }
+
+  getTextStyleConfig(style) {
+    const lower = (style || '').toLowerCase().trim()
+    const baseConfig = {
+      fontColor: null,
+      borderColor: null,
+      borderWidth: 0,
+      shadowColor: null,
+      shadowX: 2,
+      shadowY: 2,
+      fontCandidates: [],
+      backgroundColor: null,
+      backgroundOpacity: 0.6,
+      highlightColor: 'yellow',
+      boxBorderWidth: 20,
+      transform: null,
+      extraOptions: [],
+      defaultFontSize: null
+    }
+
+    switch (lower) {
+      case 'bold':
+        return {
+          ...baseConfig,
+          borderWidth: 4,
+          borderColor: '#000000',
+          shadowColor: '#000000',
+          shadowX: 2,
+          shadowY: 2,
+          fontCandidates: ['/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf']
+        }
+      case 'cinematic':
+        return {
+          ...baseConfig,
+          fontColor: '#ffd700',
+          borderWidth: 2,
+          borderColor: '#000000',
+          shadowColor: '#000000',
+          shadowX: 0,
+          shadowY: 4,
+          fontCandidates: ['/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf']
+        }
+      case 'retro':
+        return {
+          ...baseConfig,
+          fontColor: '#ff8c00',
+          borderWidth: 2,
+          borderColor: '#2b2b52',
+          shadowColor: '#2b2b52',
+          shadowX: 3,
+          shadowY: 3
+        }
+      case 'handwritten':
+        return {
+          ...baseConfig,
+          fontColor: '#ff69b4',
+          shadowColor: '#000000',
+          shadowX: 1,
+          shadowY: 1,
+          fontCandidates: [
+            '/usr/share/fonts/truetype/google-droid/DroidSerif-Italic.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'
+          ]
+        }
+      case 'neon glow':
+        return {
+          ...baseConfig,
+          fontColor: '#39ff14',
+          borderWidth: 3,
+          borderColor: '#00bfff',
+          shadowColor: '#39ff14',
+          shadowX: 0,
+          shadowY: 0,
+          backgroundColor: '#000000',
+          backgroundOpacity: 0.25
+        }
+      case 'typewriter':
+        return {
+          ...baseConfig,
+          fontColor: '#ffffff',
+          borderWidth: 1,
+          borderColor: '#000000',
+          shadowColor: '#000000',
+          shadowX: 0,
+          shadowY: 0,
+          fontCandidates: ['/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf']
+        }
+      case 'lower third':
+        return {
+          ...baseConfig,
+          fontColor: '#ffffff',
+          borderWidth: 0,
+          backgroundColor: '#000000',
+          backgroundOpacity: 0.55,
+          boxBorderWidth: 30
+        }
+      case 'minimal':
+        return {
+          ...baseConfig,
+          fontColor: '#ffffff',
+          shadowColor: '#000000',
+          shadowX: 0,
+          shadowY: 3
+        }
+      case 'subtitle':
+        return {
+          ...baseConfig,
+          fontColor: '#ffffff',
+          borderWidth: 2,
+          borderColor: '#000000',
+          shadowColor: '#000000',
+          shadowX: 0,
+          shadowY: 3
+        }
+      default:
+        return baseConfig
+    }
   }
 
   /**
