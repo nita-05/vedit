@@ -42,6 +42,9 @@ export default function DashboardPage() {
   const [videoKey, setVideoKey] = useState(0)
   const [editHistory, setEditHistory] = useState<string[]>([]) // Stack of video URLs for undo
   const [currentTime, setCurrentTime] = useState(0) // Current playback time
+  const [isProcessingSequence, setIsProcessingSequence] = useState(false) // Track if processing a sequence
+  const sequenceQueueRef = useRef<Array<{ command: string; resolve: () => void }>>([]) // Queue for sequential operations
+  const lastProcessedUrlRef = useRef<string | null>(null) // Track last processed URL to detect completion
   const [duration, setDuration] = useState(0) // Total video duration
   const [isVIAProfilesOpen, setIsVIAProfilesOpen] = useState(false)
   const [isBrandKitsOpen, setIsBrandKitsOpen] = useState(false)
@@ -242,6 +245,75 @@ export default function DashboardPage() {
     setTimeout(() => {
       setExternalCommand('')
     }, 100)
+  }
+
+  // Track pending sequence completion
+  const pendingSequenceResolveRef = useRef<(() => void) | null>(null)
+  const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Process next command in sequence queue
+  const processNextInQueue = async () => {
+    if (sequenceQueueRef.current.length === 0) {
+      setIsProcessingSequence(false)
+      return
+    }
+
+    const { command, resolve } = sequenceQueueRef.current[0]
+    sequenceQueueRef.current.shift() // Remove from queue
+    
+    console.log(`📤 Processing sequence command: ${command} (${sequenceQueueRef.current.length} remaining)`)
+    
+    // Store current URL to detect when processing completes
+    lastProcessedUrlRef.current = selectedMedia?.url || null
+    pendingSequenceResolveRef.current = resolve
+    
+    // Send command
+    setExternalCommand(command)
+    
+    // Set timeout as fallback (in case onVideoUpdate doesn't fire)
+    if (sequenceCompletionTimeoutRef.current) {
+      clearTimeout(sequenceCompletionTimeoutRef.current)
+    }
+    sequenceCompletionTimeoutRef.current = setTimeout(() => {
+      console.log(`⏱️ Sequence command timeout (fallback): ${command}`)
+      if (pendingSequenceResolveRef.current) {
+        pendingSequenceResolveRef.current()
+        pendingSequenceResolveRef.current = null
+      }
+      // Wait before next command
+      setTimeout(() => {
+        processNextInQueue()
+      }, 2000)
+    }, 45000) // 45 second timeout (generous for video processing)
+  }
+
+  // Add command to sequence queue
+  const addToSequenceQueue = (command: string): Promise<void> => {
+    return new Promise((resolve) => {
+      sequenceQueueRef.current.push({ command, resolve })
+      if (!isProcessingSequence) {
+        setIsProcessingSequence(true)
+        processNextInQueue()
+      }
+    })
+  }
+
+  // Handle sequence completion when video updates
+  const handleSequenceCompletion = () => {
+    if (pendingSequenceResolveRef.current) {
+      console.log('✅ Sequence command completed via onVideoUpdate')
+      if (sequenceCompletionTimeoutRef.current) {
+        clearTimeout(sequenceCompletionTimeoutRef.current)
+        sequenceCompletionTimeoutRef.current = null
+      }
+      pendingSequenceResolveRef.current()
+      pendingSequenceResolveRef.current = null
+      
+      // Wait before next command (to ensure video is ready)
+      setTimeout(() => {
+        processNextInQueue()
+      }, 2000) // 2 second buffer between operations
+    }
   }
 
   const handleSave = async () => {
@@ -527,6 +599,12 @@ export default function DashboardPage() {
         onApplyTemplate={async (operations) => {
           // Apply template operations sequentially via VIA
           console.log('🎨 Applying template with', operations.length, 'operations')
+          
+          // Clear queue and start fresh
+          sequenceQueueRef.current = []
+          
+          // Build command queue
+          const commands: string[] = []
           for (let i = 0; i < operations.length; i++) {
             const op = operations[i]
             let command = ''
@@ -552,11 +630,15 @@ export default function DashboardPage() {
                 command = `${op.operation === 'colorGrade' ? 'Apply' : op.operation === 'applyEffect' ? 'Apply' : 'Add'} ${op.params.preset || op.params.text || ''} ${op.operation === 'addText' ? 'text' : op.operation === 'colorGrade' ? 'color grade' : 'effect'}`
             }
             
-            console.log(`📤 Template operation ${i + 1}/${operations.length}: ${command}`)
-            setExternalCommand(command)
-            // Wait for processing to complete before next operation
-            await new Promise(resolve => setTimeout(resolve, 3000))
+            commands.push(command)
           }
+          
+          // Process all commands sequentially
+          for (const command of commands) {
+            await addToSequenceQueue(command)
+          }
+          
+          console.log('✅ Template application complete')
         }}
       />
 
@@ -569,6 +651,12 @@ export default function DashboardPage() {
         onApplyEnhancements={async (operations) => {
           // Apply enhancements sequentially via VIA
           console.log('🤖 Applying auto-enhancements with', operations.length, 'operations')
+          
+          // Clear queue and start fresh
+          sequenceQueueRef.current = []
+          
+          // Build command queue
+          const commands: string[] = []
           for (let i = 0; i < operations.length; i++) {
             const op = operations[i]
             let command = ''
@@ -607,11 +695,15 @@ export default function DashboardPage() {
                 command = `Apply ${op.params.preset || 'enhancement'} to the video`
             }
             
-            console.log(`📤 Auto-enhancement operation ${i + 1}/${operations.length}: ${command}`)
-            setExternalCommand(command)
-            // Wait for processing to complete before next operation (longer wait for video processing)
-            await new Promise(resolve => setTimeout(resolve, 4000))
+            commands.push(command)
           }
+          
+          // Process all commands sequentially
+          for (const command of commands) {
+            await addToSequenceQueue(command)
+          }
+          
+          console.log('✅ Auto-enhancement application complete')
         }}
       />
 
@@ -1316,6 +1408,11 @@ export default function DashboardPage() {
                 console.log('📊 Dashboard: Original URL:', originalVideoUrl)
                 console.log('📊 Dashboard: Previous URL:', selectedMedia.url)
                 console.log('📊 Dashboard: New URL:', url)
+                
+                // Signal sequence completion if we're processing a sequence
+                if (urlChanged && pendingSequenceResolveRef.current) {
+                  handleSequenceCompletion()
+                }
                 
                 // IMPORTANT: Only update if URL is different and valid
                 if (!urlChanged) {
