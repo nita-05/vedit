@@ -1020,14 +1020,12 @@ class VideoProcessor {
             case 'fade':
             case 'fade in':
             case 'fade out':
-            case 'fade in/out':
-              // Fade in/out effect
-              if (startTime !== undefined && endTime !== undefined && endTime > startTime) {
-                const fadeDuration = Math.min(safeDuration, (endTime - startTime) / 2)
-                transitionFilter = `fade=t=in:st=${startTime}:d=${fadeDuration},fade=t=out:st=${endTime - fadeDuration}:d=${fadeDuration}`
-              } else {
-                transitionFilter = `fade=t=in:st=0:d=${safeDuration},fade=t=out:st=*:d=${safeDuration}`
-              }
+            case 'fade in/out': {
+              const fadeStart = startTime !== undefined ? startTime : 0
+              const fadeDuration = Math.max(0.1, Math.min(safeDuration, 2.0))
+              transitionFilter = `fade=t=in:st=${fadeStart}:d=${fadeDuration},format=yuv420p`
+              break
+            }
               break
             case 'cross dissolve':
             case 'dissolve':
