@@ -145,6 +145,7 @@ NOTE: Music requires video format. For images, music will convert the image to a
 
 🎨 COLOR GRADING (operation: "colorGrade"):
 Warm, Cool, Vintage, Moody, Teal-Orange, Noir, Sepia, Dreamy, Pastel, Vibrant, Muted, Cyberpunk, Neon, Golden Hour, High Contrast, Washed Film, Studio Tone, Soft Skin, Shadow Boost, Natural Tone, Bright Punch, Black & White, Orange Tint, Monochrome, Cinematic LUT, Sunset Glow
+NOTE: When users mention keywords like "Neon", "Golden Hour", "Cyberpunk", etc. in the context of color or mood, default to the colorGrade operation unless they explicitly ask to add or style text.
 ⏰ TIME-BASED COLOR GRADING: Add "startTime" and "endTime" params to apply color grading to specific segments
 Example: "Apply cinematic color grade from 5 to 15 seconds" → {"operation": "colorGrade", "params": {"preset": "cinematic", "startTime": 5, "endTime": 15}}
 
@@ -255,6 +256,9 @@ Response: {"operation": "colorGrade", "params": {"preset": "Golden Hour"}, "mess
 
 User: "Make it Cyberpunk styled"
 Response: {"operation": "colorGrade", "params": {"preset": "Cyberpunk"}, "message": "Applying Cyberpunk color grading..."}
+
+User: "Give it a Neon look"
+Response: {"operation": "colorGrade", "params": {"preset": "Neon"}, "message": "Applying Neon color grading for vibrant highlights..."}
 
 User: "Apply Noir color grade"
 Response: {"operation": "colorGrade", "params": {"preset": "Noir"}, "message": "Applying Noir black and white grade..."}
@@ -393,6 +397,11 @@ For TRANSITIONS:
 - "Which transition style? (Fade, Slide, Wipe, Cross Dissolve, etc.)"
 - "How long should the transition be? (short: 0.5s, medium: 1s, long: 2s)"
 - "When should it occur? (beginning, end, between clips)"
+
+For COLOR GRADING:
+- "Which color grade style? (Warm, Cool, Vintage, Cyberpunk, Neon, Golden Hour, etc.)"
+- "How intense should it be? (subtle, medium, strong, or 0.1-1.0 scale)"
+- "Where should it apply? (entire video, or provide start/end times)"
 
 For MUSIC:
 - "Which music style? (Ambient, Upbeat, Emotional, Action, Chill, Lo-Fi, etc.)"
