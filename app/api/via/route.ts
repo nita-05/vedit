@@ -136,7 +136,7 @@ Example: "Add blur effect starting from 10 seconds" → {"operation": "applyEffe
 Example: "Blur from 2s to 8s" → {"operation": "applyEffect", "params": {"preset": "blur", "startTime": 2, "endTime": 8}}
 
 🎬 TRANSITIONS (operation: "addTransition"):
-Fade, Slide, Wipe, Zoom, Cross Dissolve, Blur In/Out, Spin, Morph Cut, Split Reveal, Flash, Zoom Blur, Cube Rotate, 3D Flip, Warp, Ripple, Glitch Transition, Luma Fade, Light Sweep, Stretch Pull, Film Roll, Page Turn, Diagonal Wipe, Motion Blur Transition, Cinematic Cut
+Fade, Slide, Wipe, Cross Dissolve, Blur In/Out, Spin, Morph Cut, Split Reveal, Flash, Zoom Blur, Cube Rotate, 3D Flip, Warp, Ripple, Glitch Transition, Luma Fade, Light Sweep, Stretch Pull, Film Roll, Page Turn, Diagonal Wipe, Motion Blur Transition, Cinematic Cut
 NOTE: Transitions work best with videos (multiple frames). For single images, transitions will have minimal effect.
 
 🎧 MUSIC & SFX (operation: "addMusic"):
@@ -390,7 +390,7 @@ For EFFECTS:
 - "Where should it be applied? (entire video, specific time range)"
 
 For TRANSITIONS:
-- "Which transition style? (Fade, Slide, Wipe, Zoom, Cross Dissolve, etc.)"
+- "Which transition style? (Fade, Slide, Wipe, Cross Dissolve, etc.)"
 - "How long should the transition be? (short: 0.5s, medium: 1s, long: 2s)"
 - "When should it occur? (beginning, end, between clips)"
 
@@ -1878,7 +1878,7 @@ async function analyzeVideoContent(publicId: string, isImage: boolean = false): 
       },
       { 
         category: 'Transitions', 
-        recommendation: duration > 10 ? 'Add Fade, Cross Dissolve, or Zoom transitions' : 'Skip transitions for short clips',
+        recommendation: duration > 10 ? 'Add Fade, Cross Dissolve, or Slide transitions' : 'Skip transitions for short clips',
         reason: duration > 10 ? 'Multiple transitions work well' : 'Short content flows naturally without transitions'
       },
       { 
