@@ -217,9 +217,9 @@ class VideoProcessor {
         break
 
       case 'neon':
-        pushFilter(`eq=saturation=${(1.25 + intensity * 0.5).toFixed(2)}`)
-        pushFilter('curves=preset=high_contrast')
-        pushFilter(`colorbalance=gs=${(0.1 * intensity).toFixed(2)}:rs=${(-0.05 * intensity).toFixed(2)}`)
+        pushFilter('curves=preset=medium_contrast')
+        pushFilter(`eq=saturation=${(1.2 + intensity * 0.35).toFixed(2)}:gamma=${(1.0 + intensity * 0.05).toFixed(2)}`)
+        pushFilter(`hue=h=${(250 + intensity * 30).toFixed(2)}`)
         break
 
       case 'golden hour':
