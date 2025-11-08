@@ -30,6 +30,37 @@ class VideoProcessor {
   }
 
   /**
+   * Normalize intensity inputs from strings or numbers into 0.1 - 1.0 range
+   */
+  resolveIntensity(rawValue, defaultValue = 0.6) {
+    if (rawValue === undefined || rawValue === null) {
+      return defaultValue
+    }
+
+    if (typeof rawValue === 'number' && Number.isFinite(rawValue)) {
+      return Math.max(0.1, Math.min(rawValue, 1.0))
+    }
+
+    if (typeof rawValue === 'string') {
+      const normalized = rawValue.trim().toLowerCase()
+      if (!normalized) {
+        return defaultValue
+      }
+
+      if (EFFECT_INTENSITY_KEYWORDS[normalized] !== undefined) {
+        return EFFECT_INTENSITY_KEYWORDS[normalized]
+      }
+
+      const parsed = parseFloat(normalized.replace(/[^\d.-]/g, ''))
+      if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+        return Math.max(0.1, Math.min(parsed, 1.0))
+      }
+    }
+
+    return defaultValue
+  }
+
+  /**
    * Apply time-based filter wrapper
    */
   applyTimeBasedFilter(filter, startTime, endTime) {
@@ -102,40 +133,153 @@ class VideoProcessor {
    */
   applyColorGrade(command, preset, options = {}) {
     const { startTime, endTime } = options
-    let filter = ''
-    
-    switch (preset?.toLowerCase()) {
+    const presetKey = preset?.toLowerCase() || ''
+    const mood = (options.mood || options.tone || options.variant || options.look || options.style || options.theme || '').toString().toLowerCase()
+    const intensity = this.resolveIntensity(options.intensity ?? options.level ?? options.strength ?? options.amount, 0.6)
+
+    const filters = []
+    const pushFilter = (value) => {
+      if (value && typeof value === 'string') {
+        filters.push(value)
+      }
+    }
+
+    switch (presetKey) {
       case 'cinematic':
       case 'cinema':
-        filter = 'curves=preset=strong_contrast:master=0.5/0.5'
+        pushFilter('curves=preset=strong_contrast')
+        pushFilter(`eq=saturation=${(1.0 + intensity * 0.2).toFixed(2)}`)
         break
+
       case 'vintage':
       case 'retro':
-        filter = 'curves=preset=vintage,eq=saturation=0.7'
+        pushFilter('curves=preset=vintage')
+        pushFilter(`eq=saturation=${(0.7 + (1 - intensity) * 0.1).toFixed(2)}`)
         break
+
       case 'black & white':
       case 'grayscale':
       case 'b&w':
-        filter = 'hue=s=0'
+      case 'noir':
+        pushFilter('hue=s=0')
+        pushFilter(`eq=gamma=${mood === 'dark' ? 0.85 : 1.0}`)
         break
+
       case 'warm':
-        filter = 'eq=saturation=1.2:gamma_b=0.9'
+        pushFilter(`eq=saturation=${(1.05 + intensity * 0.25).toFixed(2)}:gamma_b=${(0.95 - intensity * 0.25).toFixed(2)}`)
+        pushFilter('curves=preset=medium_contrast')
         break
+
       case 'cool':
-        filter = 'eq=saturation=1.1:gamma_r=0.9'
+        pushFilter(`eq=saturation=${(1.0 - intensity * 0.05).toFixed(2)}:gamma_r=${(0.95 - intensity * 0.3).toFixed(2)}`)
+        pushFilter('curves=preset=medium_contrast')
         break
-      case 'dramatic':
-        filter = 'curves=preset=strong_contrast'
+
+      case 'moody':
+        pushFilter('curves=preset=strong_contrast')
+        pushFilter(`eq=saturation=${(0.75 + (1 - intensity) * 0.1).toFixed(2)}`)
         break
+
+      case 'teal-orange':
+      case 'teal orange':
+      case 'tealorange':
+        pushFilter('curves=preset=medium_contrast')
+        pushFilter(`colorbalance=rs=${(0.15 * intensity).toFixed(2)}:bs=${(-0.15 * intensity).toFixed(2)}`)
+        break
+
+      case 'sepia':
+        pushFilter('curves=preset=vintage')
+        pushFilter(`colorchannelmixer=.393:.769:.189:.349:.686:.168:.272:.534:.131`)
+        break
+
+      case 'dreamy':
+        pushFilter(`eq=saturation=${(0.9 + intensity * 0.1).toFixed(2)}:gamma=${(1.05 + intensity * 0.1).toFixed(2)}`)
+        pushFilter('curves=preset=medium_contrast')
+        break
+
+      case 'pastel':
+        pushFilter(`eq=saturation=${(0.85 - intensity * 0.15).toFixed(2)}:gamma=${(1.05 + intensity * 0.05).toFixed(2)}`)
+        break
+
+      case 'vibrant':
+        pushFilter(`eq=saturation=${(1.15 + intensity * 0.35).toFixed(2)}`)
+        pushFilter('curves=preset=medium_contrast')
+        break
+
+      case 'muted':
+        pushFilter(`eq=saturation=${(0.7 - intensity * 0.2).toFixed(2)}:gamma=${(0.95 - intensity * 0.05).toFixed(2)}`)
+        break
+
+      case 'cyberpunk':
+        pushFilter(`eq=saturation=${(1.2 + intensity * 0.4).toFixed(2)}`)
+        pushFilter(`hue=h=${(200 + intensity * 20).toFixed(2)}`)
+        pushFilter('curves=preset=high_contrast')
+        break
+
+      case 'neon':
+        pushFilter(`eq=saturation=${(1.25 + intensity * 0.5).toFixed(2)}`)
+        pushFilter('curves=preset=high_contrast')
+        pushFilter(`colorbalance=gs=${(0.1 * intensity).toFixed(2)}:rs=${(-0.05 * intensity).toFixed(2)}`)
+        break
+
+      case 'golden hour':
+      case 'golden-hour':
+        pushFilter(`eq=saturation=${(1.15 + intensity * 0.25).toFixed(2)}:gamma_b=${(0.95 - intensity * 0.3).toFixed(2)}`)
+        pushFilter('curves=preset=medium_contrast')
+        break
+
+      case 'high contrast':
+        pushFilter('curves=preset=strong_contrast')
+        break
+
+      case 'washed film':
+        pushFilter('curves=preset=medium_contrast')
+        pushFilter(`eq=saturation=${(0.8 - intensity * 0.1).toFixed(2)}:gamma=${(1.05 + intensity * 0.05).toFixed(2)}`)
+        break
+
+      case 'studio tone':
+        pushFilter(`eq=saturation=${(0.95 + intensity * 0.05).toFixed(2)}:gamma=${(1.0 + intensity * 0.05).toFixed(2)}`)
+        pushFilter('curves=preset=medium_contrast')
+        break
+
+      case 'soft skin':
+        pushFilter(`bilateral=radius=${Math.round(3 + intensity * 3)}:sigmaS=${(50 + intensity * 50).toFixed(0)}:sigmaR=${(0.1 + intensity * 0.1).toFixed(2)}`)
+        pushFilter(`eq=saturation=${(0.95 + intensity * 0.05).toFixed(2)}`)
+        break
+
+      case 'shadow boost':
+        pushFilter(`eq=contrast=${(1.05 + intensity * 0.1).toFixed(2)}:brightness=${(0.05 + intensity * 0.05).toFixed(2)}`)
+        break
+
+      case 'natural tone':
+        pushFilter(`eq=saturation=${(1.0 + intensity * 0.1).toFixed(2)}:gamma=${(1.0 + intensity * 0.02).toFixed(2)}`)
+        break
+
       default:
-        filter = 'curves=preset=medium_contrast'
+        pushFilter('curves=preset=medium_contrast')
+        pushFilter(`eq=saturation=${(1.0 + intensity * 0.1).toFixed(2)}`)
     }
-    
+
+    if (mood === 'dark') {
+      pushFilter(`eq=gamma=${(0.9 - intensity * 0.1).toFixed(2)}`)
+    } else if (mood === 'bright') {
+      pushFilter(`eq=gamma=${(1.05 + intensity * 0.1).toFixed(2)}`)
+    }
+
+    let filterString = filters.join(',')
+    if (!filterString) {
+      filterString = 'eq=gamma=1.0'
+    }
+
     if (startTime !== undefined || endTime !== undefined) {
-      filter = this.applyTimeBasedFilter(filter, startTime, endTime)
+      filterString = this.applyTimeBasedFilter(filterString, startTime, endTime)
     }
-    
-    return command.videoFilters(filter)
+
+    const finalFilter = filterString
+      ? `${filterString},format=yuv420p`
+      : 'format=yuv420p'
+
+    return command.videoFilters(finalFilter)
   }
 
   /**
@@ -917,8 +1061,9 @@ class VideoProcessor {
         }
         
         case 'colorGrade': {
-          const { preset, startTime, endTime } = instruction.params
-          command = this.applyColorGrade(command, preset, { startTime, endTime })
+          const params = instruction.params || {}
+          const { preset } = params
+          command = this.applyColorGrade(command, preset, params)
           break
         }
         
