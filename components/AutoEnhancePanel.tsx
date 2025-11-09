@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { motion } from 'framer-motion'
 
 interface AutoEnhancePanelProps {
@@ -21,6 +21,15 @@ export default function AutoEnhancePanel({
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [suggestions, setSuggestions] = useState<any>(null)
   const [isApplying, setIsApplying] = useState(false)
+  const [autoApply, setAutoApply] = useState(false)
+
+  useEffect(() => {
+    if (!isOpen) {
+      setSuggestions(null)
+      setIsAnalyzing(false)
+      setIsApplying(false)
+    }
+  }, [isOpen])
 
   const handleAnalyze = async () => {
     if (!videoPublicId) {
@@ -37,14 +46,31 @@ export default function AutoEnhancePanel({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           videoPublicId,
-          autoApply: false,
+          autoApply,
         }),
       })
+
+      if (!response.ok) {
+        throw new Error('Analysis request failed')
+      }
 
       const data = await response.json()
 
       if (data.success) {
         setSuggestions(data)
+
+        if (autoApply && data.operations?.length) {
+          setIsApplying(true)
+          try {
+            await onApplyEnhancements(data.operations)
+            onClose()
+          } catch (error) {
+            console.error('Failed to auto-apply enhancements:', error)
+            alert('Enhancements were analyzed but failed to apply automatically. Please try again.')
+          } finally {
+            setIsApplying(false)
+          }
+        }
       } else {
         alert(data.error || 'Analysis failed')
       }
@@ -102,15 +128,29 @@ export default function AutoEnhancePanel({
             <p className="text-white/60 mb-6">
               AI will analyze your video and suggest the best enhancements automatically.
             </p>
+            <label className="flex items-center justify-center gap-3 text-sm text-white/70 mb-6">
+              <input
+                type="checkbox"
+                checked={autoApply}
+                onChange={(e) => setAutoApply(e.target.checked)}
+                className="h-4 w-4 rounded border-white/40 bg-transparent text-vedit-blue focus:ring-vedit-blue"
+              />
+              Auto-apply enhancements after analysis
+            </label>
             <button
               onClick={handleAnalyze}
-              disabled={isAnalyzing || !videoPublicId}
+              disabled={isAnalyzing || isApplying || !videoPublicId}
               className="px-6 py-3 rounded-xl bg-gradient-to-r from-vedit-purple to-vedit-blue text-white font-semibold hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {isAnalyzing ? (
                 <span className="flex items-center gap-2">
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   Analyzing...
+                </span>
+              ) : isApplying ? (
+                <span className="flex items-center gap-2">
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                  Applying...
                 </span>
               ) : (
                 '🔍 Analyze Video'
@@ -223,29 +263,6 @@ export default function AutoEnhancePanel({
                 </div>
               )}
 
-              {/* Noise Reduction */}
-              {suggestions.suggestions?.noiseReduction?.needed && (
-                <div className="mb-3">
-                  <span className="text-xs text-white/40">🔇 Noise Reduction:</span>
-                  <span className="ml-2 text-white capitalize font-medium">
-                    {suggestions.suggestions.noiseReduction.intensity || 'medium'} intensity
-                  </span>
-                </div>
-              )}
-
-              {/* Saturation Adjustment */}
-              {suggestions.suggestions?.saturation?.needed && (
-                <div className="mb-3">
-                  <span className="text-xs text-white/40">🎨 Saturation:</span>
-                  <span className="ml-2 text-white capitalize font-medium">
-                    {suggestions.suggestions.saturation.adjustment || 'increase'} 
-                    {suggestions.suggestions.saturation.amount 
-                      ? ` (${(suggestions.suggestions.saturation.amount * 100).toFixed(0)}%)`
-                      : ''}
-                  </span>
-                </div>
-              )}
-
               {/* Speed Adjustment */}
               {suggestions.suggestions?.speed && suggestions.suggestions.speed !== 1.0 && (
                 <div className="mb-3">
@@ -267,7 +284,7 @@ export default function AutoEnhancePanel({
             <div className="flex gap-3">
               <button
                 onClick={handleApply}
-                disabled={isApplying}
+                disabled={isApplying || isAnalyzing}
                 className="flex-1 px-4 py-3 rounded-xl bg-gradient-to-r from-vedit-pink to-vedit-purple text-white font-semibold hover:scale-105 transition-transform disabled:opacity-50"
               >
                 {isApplying ? 'Applying...' : '✅ Apply Enhancements'}
@@ -277,7 +294,7 @@ export default function AutoEnhancePanel({
                   setSuggestions(null)
                   handleAnalyze()
                 }}
-                disabled={isAnalyzing}
+                disabled={isAnalyzing || isApplying}
                 className="px-4 py-3 rounded-xl bg-white/10 text-white hover:bg-white/20 transition-colors disabled:opacity-50"
               >
                 🔄 Re-analyze
