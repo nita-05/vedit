@@ -3,28 +3,17 @@
 import { motion } from 'framer-motion'
 import { signIn, useSession } from 'next-auth/react'
 import { useRouter } from 'next/navigation'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect } from 'react'
 
 export default function LandingPage() {
   const { data: session, status } = useSession()
   const router = useRouter()
-  const videoRef = useRef<HTMLVideoElement>(null)
-  const [videoError, setVideoError] = useState(false)
 
   useEffect(() => {
     if (status === 'authenticated') {
       router.push('/dashboard')
     }
   }, [status, router])
-
-  useEffect(() => {
-    if (videoRef.current) {
-      videoRef.current.play().catch((error) => {
-        console.error('Video play error:', error)
-        setVideoError(true)
-      })
-    }
-  }, [])
 
   const features = [
     {
@@ -51,25 +40,8 @@ export default function LandingPage() {
 
   return (
     <div className="relative w-full min-h-screen overflow-hidden">
-      {/* Background Video */}
-      {!videoError ? (
-        <video
-          ref={videoRef}
-          src="/videos/bg.mp4"
-          autoPlay
-          loop
-          muted
-          playsInline
-          preload="auto"
-          onError={() => {
-            console.error('Video failed to load')
-            setVideoError(true)
-          }}
-          className="absolute inset-0 w-full h-full object-cover opacity-70"
-        />
-      ) : (
-        <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-vedit-purple/20 via-black to-vedit-blue/20 animate-pulse"></div>
-      )}
+      {/* Background Layer */}
+      <div className="absolute inset-0 w-full h-full bg-gradient-to-br from-vedit-purple/20 via-black to-vedit-blue/20 animate-pulse"></div>
       <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-transparent to-black/70"></div>
 
       {/* Navbar */}
