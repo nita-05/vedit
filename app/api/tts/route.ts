@@ -91,7 +91,7 @@ export async function POST(request: NextRequest) {
           {
             resource_type: 'video', // Cloudinary treats audio as video
             folder: 'vedit/tts-audio',
-            public_id: `tts_${Date.now()}_${session.user.email.replace('@', '_')}`,
+            public_id: `tts_${Date.now()}_${session.user.email?.replace('@', '_') || 'user'}`,
             format: 'mp3',
           },
           (error, result) => {
