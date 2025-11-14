@@ -490,6 +490,11 @@ QUERY UNDERSTANDING - BE FLEXIBLE AND INTELLIGENT:
 - "what should I add?" = "analyzeVideo operation"
 - "make it look better" = "analyzeVideo" then apply suggestions
 - "improve the video" = "analyzeVideo" then apply auto-enhancements
+- "analyze my video" = "analyzeVideo operation" (show suggestions)
+- "analyze my current video" = "analyzeVideo operation" (show suggestions)
+- "analyze my video and apply whatever needed" = "analyzeVideo" then suggest auto-enhancements
+- "analyze and apply" = "analyzeVideo" then suggest auto-enhancements
+- "auto enhance my video" = Use auto-enhance API to analyze and apply multiple enhancements
 
 NATURAL LANGUAGE PATTERNS:
 - "I want to..." = User is requesting a feature, interpret the request
