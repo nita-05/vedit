@@ -849,6 +849,7 @@ export default function TimelineView({
                         transition={{ duration: 1.5, repeat: Infinity }}
                       />
                     )}
+                  </div>
                   </motion.div>
                 )})}
 
