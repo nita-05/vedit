@@ -388,7 +388,7 @@ export default function VIAChat({
                                 <p className="text-xs font-semibold text-vedit-purple group-hover:text-vedit-blue transition-colors">
                                   {suggestion.category}
                                 </p>
-                                <p className="text-sm text-white/90 mt-1">{recommendation}</p>
+                                <p className="text-sm text-white/90 mt-1">{suggestion.recommendation}</p>
                                 {suggestion.reason && (
                                   <p className="text-xs text-gray-400 mt-1">{suggestion.reason}</p>
                                 )}
