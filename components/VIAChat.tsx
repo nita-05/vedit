@@ -3,12 +3,19 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
+interface Suggestion {
+  category: string
+  recommendation: string
+  reason?: string
+}
+
 interface Message {
   id: string
   role: 'user' | 'assistant'
   content: string
   timestamp: Date
   isTyping?: boolean
+  suggestions?: Suggestion[]
 }
 
 interface VIAChatProps {
@@ -154,6 +161,7 @@ export default function VIAChat({
       console.log(`⚡ ${isEditingCommand ? 'VIA' : 'VIA Chat'} response time: ${responseTime}ms`)
 
       let messageContent = ''
+      let suggestions: Suggestion[] = []
       
       if (isEditingCommand) {
         // Video editing response
@@ -163,15 +171,11 @@ export default function VIAChat({
         }
         if (data.suggestions && Array.isArray(data.suggestions)) {
           messageContent += '\n\n📋 Suggestions:'
-          data.suggestions.forEach((suggestion: any, index: number) => {
-            const category = suggestion.category || 'Feature'
-            const recommendation = suggestion.recommendation || suggestion
-            const reason = suggestion.reason || ''
-            messageContent += `\n${index + 1}. **${category}**: ${recommendation}`
-            if (reason) {
-              messageContent += ` (${reason})`
-            }
-          })
+          suggestions = data.suggestions.map((suggestion: any) => ({
+            category: suggestion.category || 'Feature',
+            recommendation: suggestion.recommendation || suggestion,
+            reason: suggestion.reason || '',
+          }))
         }
 
         if (data.videoUrl) {
@@ -191,6 +195,7 @@ export default function VIAChat({
         content: messageContent,
         timestamp: new Date(),
         isTyping: true,
+        suggestions: suggestions.length > 0 ? suggestions : undefined,
       }
 
       setMessages((prev) => [...prev, assistantMessage])
@@ -360,7 +365,41 @@ export default function VIAChat({
                 {message.isTyping && message.role === 'assistant' ? (
                   <TypingText text={message.content} />
                 ) : (
-                  <p className="text-sm sm:text-base whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                  <>
+                    <p className="text-sm sm:text-base whitespace-pre-wrap leading-relaxed">{message.content}</p>
+                    {message.suggestions && message.suggestions.length > 0 && (
+                      <div className="mt-4 space-y-2">
+                        <p className="text-xs font-semibold text-gray-300 mb-2">Click to apply:</p>
+                        {message.suggestions.map((suggestion, index) => (
+                          <motion.button
+                            key={index}
+                            whileHover={{ scale: 1.02, x: 4 }}
+                            whileTap={{ scale: 0.98 }}
+                            onClick={() => {
+                              // Extract the action from the recommendation
+                              const recommendation = suggestion.recommendation
+                              // Send command to apply the suggestion
+                              handleSend(recommendation)
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-lg bg-gradient-to-r from-vedit-purple/20 to-vedit-blue/20 hover:from-vedit-purple/30 hover:to-vedit-blue/30 border border-vedit-purple/30 hover:border-vedit-purple/50 transition-all duration-200 group"
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="flex-1">
+                                <p className="text-xs font-semibold text-vedit-purple group-hover:text-vedit-blue transition-colors">
+                                  {suggestion.category}
+                                </p>
+                                <p className="text-sm text-white/90 mt-1">{recommendation}</p>
+                                {suggestion.reason && (
+                                  <p className="text-xs text-gray-400 mt-1">{suggestion.reason}</p>
+                                )}
+                              </div>
+                              <span className="text-lg opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+                            </div>
+                          </motion.button>
+                        ))}
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </motion.div>

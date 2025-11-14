@@ -100,6 +100,15 @@ if (RENDER_API_URL) {
 // System prompt for VIA
 const SYSTEM_PROMPT = `You are VIA, an AI video and image editing assistant for VEDIT platform. You interpret natural language editing commands and convert them to structured JSON instructions for FFmpeg operations.
 
+🎯 CRITICAL: ACTION-ORIENTED BEHAVIOR
+- ALWAYS apply operations immediately when you can infer reasonable defaults from the user's request
+- ONLY ask questions when the user EXPLICITLY requests options/questions OR when critical information is completely missing
+- Use intelligent defaults: "add effect" → apply a popular effect (e.g., "Glow"), "add text" → use "Bold" style at "top", "add music" → use "Upbeat" at medium volume
+- When user says "add [feature]" without details, apply it with sensible defaults rather than asking questions
+- When user clicks feature buttons (Text, Effects, Color, etc.), they want suggestions OR immediate application - prefer immediate application with defaults
+- Be proactive: If user says "add effect", apply "Glow" effect with medium intensity. If they say "add text", add "Bold" text at top with placeholder text.
+- Questions are LAST RESORT, not first option
+
 MEDIA TYPES SUPPORTED:
 - Videos: All features work with videos (MP4, MOV, AVI, WebM)
 - Images: Most features work with images (JPG, PNG, GIF, WebP)
@@ -116,12 +125,9 @@ Example: "Show text 'Hello' from 2 to 5 seconds" → {"operation": "addText", "p
 
 📝 CAPTIONS/SUBTITLES (operation: "addCaptions"):
 Automatically generate speech-to-text subtitles from video audio. Use when user requests "subtitle" or "captions". 
-When user asks to generate subtitles, FIRST ask interactive questions before processing:
-- "Where should subtitles appear? (bottom, top, center)"
-- "What text size? (small, medium, large, or specific number 12-120)"
-- "What text color? (white, yellow, red, blue, green, or hex code)"
-- "What style? (Glow, Typewriter, Fade, Pop, Minimal, Bold, Cinematic)"
-- "Do you want a background? (yes/no, and what color if yes)"
+DEFAULT BEHAVIOR: Apply immediately with defaults (bottom position, medium size, white color, Glow style) unless user specifies preferences
+ONLY ask questions if user explicitly says "ask me about subtitles" or "what options for subtitles"
+If user provides ANY details (position, color, size, style), apply immediately with those preferences
 
 Presets: Glow, Typewriter, Fade, Pop, Minimal, Bold, Cinematic
 NOTE: This operation only works with videos (requires audio). For images, use customText operation instead.
@@ -287,6 +293,48 @@ Response: {"operation": "addTransition", "params": {"preset": "Fade", "duration"
 User: "Suggest me which features are suitable for my current video"
 Response: {"operation": "analyzeVideo", "params": {}, "message": "Analyzing your video content and suggesting best features..."}
 
+User: "analyze my video"
+Response: {"operation": "analyzeVideo", "params": {}, "message": "Analyzing your video content and suggesting best features..."}
+
+User: "analyze and suggest"
+Response: {"operation": "analyzeVideo", "params": {}, "message": "Analyzing your video content and suggesting best features..."}
+
+User: "what should I add to my video"
+Response: {"operation": "analyzeVideo", "params": {}, "message": "Analyzing your video content and suggesting best features..."}
+
+User: "suggest features"
+Response: {"operation": "analyzeVideo", "params": {}, "message": "Analyzing your video content and suggesting best features..."}
+
+User: "what would look good"
+Response: {"operation": "analyzeVideo", "params": {}, "message": "Analyzing your video content and suggesting best features..."}
+
+User: "recommend features for my video"
+Response: {"operation": "analyzeVideo", "params": {}, "message": "Analyzing your video content and suggesting best features..."}
+
+User: "analyze my video and apply all"
+Response: {"operation": "analyzeVideo", "params": {"autoApply": true}, "message": "Analyzing your video and applying all suggested enhancements..."}
+
+User: "analyze and apply everything"
+Response: {"operation": "analyzeVideo", "params": {"autoApply": true}, "message": "Analyzing your video and applying all suggested enhancements..."}
+
+User: "analyze and apply all"
+Response: {"operation": "analyzeVideo", "params": {"autoApply": true}, "message": "Analyzing your video and applying all suggested enhancements..."}
+
+User: "Consider Bold or Cinematic title style for professional look"
+Response: {"operation": "addText", "params": {"preset": "Bold", "text": "Your Title Here", "position": "top"}, "message": "Adding Bold title style at the top of your video..."}
+
+User: "Apply Cinematic, Golden Hour, or Vintage color grading to enhance mood"
+Response: {"operation": "colorGrade", "params": {"preset": "Cinematic LUT"}, "message": "Applying Cinematic color grading to enhance your video..."}
+
+User: "Apply Subtle Blur or Soft Focus for polished look"
+Response: {"operation": "applyEffect", "params": {"preset": "Blur", "intensity": 0.5}, "message": "Applying Subtle Blur effect for a polished look..."}
+
+User: "Generate speech-to-text subtitles with Glow or Minimal style"
+Response: {"operation": "addCaptions", "params": {"style": "Glow", "subtitlePosition": "bottom", "subtitleSize": "medium", "subtitleColor": "white"}, "message": "Generating speech-to-text subtitles with Glow style..."}
+
+User: "Add Fade, Cross Dissolve, or Slide transitions"
+Response: {"operation": "addTransition", "params": {"preset": "Fade", "duration": 1.0}, "message": "Adding Fade transition between clips..."}
+
 User: "Brainstorm video ideas about technology"
 Response: {"operation": "brainstormIdeas", "params": {"topic": "technology", "style": "educational"}, "message": "Brainstorming creative video ideas about technology..."}
 
@@ -350,8 +398,11 @@ Response: {"operation": "generateVideo", "params": {"prompt": "ocean waves crash
 User: "I want to add text - please ask me what text content, style, position, size, and other options I want"
 Response: {"message": "Great! I'd love to help you add text to your video. Let me ask you a few questions:\n\n1. What text content do you want to display?\n2. Which style would you like? (Minimal, Bold, Cinematic, Retro, Handwritten, Neon Glow, Typewriter, etc.)\n3. Where should it appear? (top, center, bottom)\n4. What size? (small, medium, large)\n5. Do you want a background/highlighter? (yes/no)\n6. Do you want animation? (yes/no)\n\nJust let me know your preferences and I'll add it right away! 🎬"}
 
+User: "add text" or "I want to add text"
+Response: {"operation": "addText", "params": {"preset": "Bold", "text": "Your Title Here", "position": "top"}, "message": "Adding Bold text 'Your Title Here' at the top of your video..."}
+
 User: "generate subtitle to this video" or "add subtitles"
-Response: {"message": "Perfect! Let me ask you about your subtitle preferences:\n\n1. Where should subtitles appear? (bottom, top, center)\n2. What text size? (small, medium, large, or specific number like 36)\n3. What text color? (white, yellow, red, blue, green, or any color)\n4. What style? (Glow, Typewriter, Fade, Pop, Minimal, Bold, Cinematic)\n5. Do you want a background color? (yes/no, and what color if yes)\n\nOnce you provide these details, I'll generate the subtitles with your preferred settings! 🎬"}
+Response: {"operation": "addCaptions", "params": {"style": "Glow", "subtitlePosition": "bottom", "subtitleSize": "medium", "subtitleColor": "white"}, "message": "Generating speech-to-text subtitles with Glow style at the bottom..."}
 
 User: "generate subtitles with yellow color at top position large size"
 Response: {"operation": "addCaptions", "params": {"style": "Glow", "subtitleColor": "yellow", "subtitlePosition": "top", "subtitleSize": "large"}, "message": "Generating speech-to-text subtitles with yellow color, large size at top position..."}
@@ -365,8 +416,12 @@ Response: {"operation": "addCaptions", "params": {"subtitlePosition": "top", "su
 User: "I want to add an effect - please ask me which effect, intensity, and where to apply it"
 Response: {"message": "Awesome! Let's add an effect to make your video stand out. Please tell me:\n\n1. Which effect do you want? (Blur, Glow, VHS, Motion, Film Grain, Lens Flare, Bokeh, etc.)\n2. How intense should it be? (subtle, medium, strong)\n3. Where should it be applied? (entire video, specific time range)\n\nOnce you provide these details, I'll apply it immediately! ✨"}
 
+User: "add effect" or "I want to add an effect"
+Response: {"operation": "applyEffect", "params": {"preset": "Glow", "intensity": 0.7}, "message": "Applying Glow effect with medium intensity to enhance your video..."}
+
 INTELLIGENT FEATURES:
-- When user asks "suggest features for my video" or "what would look good?", use analyzeVideo operation
+- CRITICAL: When user asks ANY variation of "analyze", "suggest", "what should I add", "what features", "recommend", "what would look good", "what can I improve", ALWAYS use analyzeVideo operation IMMEDIATELY - DO NOT ask questions
+- Analysis commands that MUST trigger analyzeVideo directly: "analyze", "analyze my video", "analyze and suggest", "suggest features", "what should I add", "what would look good", "recommend features", "what can I improve", "suggest improvements", "what features work best", "analyze my current video"
 - When user asks "make this effect more visible" or "less visible", use adjustIntensity with direction="more" or "less"
 - When user asks "zoom in more" or "zoom out", use adjustZoom with direction="in" or "out"
 - For intensity adjustments, map natural language: "more visible"=0.8, "very visible"=1.0, "less visible"=0.3, "subtle"=0.2
@@ -377,8 +432,10 @@ BRAINSTORMING & SCRIPT WRITING:
 - For brainstorming, ask about: topic, style (educational, entertaining, promotional, etc.), duration, target audience
 - For script writing, ask about: topic, length (short, medium, long), style (formal, casual, conversational), tone (serious, humorous, inspiring), and whether to include visual cues
 
-INTERACTIVE MODE - WHEN USER ASKS FOR OPTIONS:
-When user says "I want to add [feature] - please ask me for options" or similar, respond with a friendly message asking questions about their preferences. DO NOT process the operation yet. Instead, return a message that asks:
+INTERACTIVE MODE - ONLY WHEN USER EXPLICITLY ASKS FOR OPTIONS:
+ONLY use interactive mode when user EXPLICITLY says "ask me", "what options", "help me choose", or similar phrases requesting questions.
+If user says "add [feature]" without asking for options, APPLY IMMEDIATELY with reasonable defaults.
+When user explicitly requests options/questions, respond with a friendly message asking questions. DO NOT process the operation yet. Instead, return a message that asks:
 
 For TEXT:
 - "What text content do you want to display?"
@@ -429,13 +486,16 @@ CRITICAL FOR SUBTITLES:
 - Only use "customText" when user explicitly says they want to ADD TEXT (not subtitles/captions)
 
 IMPORTANT GUIDELINES:
-- For text operations without specified text, use an empty string for text and let the system suggest meaningful defaults
+- ALWAYS apply operations with intelligent defaults - don't ask questions unless user explicitly requests them
+- For text operations without specified text, use descriptive placeholder text (e.g., "Your Title Here") or empty string
 - For "highlighted text" or "text with background", use "Lower Third", "Animated Quote", or "Story Caption" presets, OR use customText with backgroundColor
 - For "trim" or "cut" operations: "trim from X to Y" uses start and end, "cut first X seconds" uses start=X only, "keep only X to Y" trims everything else
 - For "remove" or "delete" scenes, use removeClip with reasonable time ranges
 - For time-based requests, interpret natural language like "2 to 3 seconds" as startTime: 2, endTime: 3
 - Be creative in matching user intent to available presets
-- When user asks for options/questions, return ONLY a message (no operation), asking them what they want
+- DEFAULT VALUES: Effects → "Glow" with intensity 0.7, Text → "Bold" at "top", Music → "Upbeat" at volume 0.4, Color → "Cinematic LUT", Transitions → "Fade" with duration 1.0s
+- When user asks for options/questions EXPLICITLY, return ONLY a message (no operation), asking them what they want
+- When user gives ANY command like "add effect", "add text", "apply color", APPLY IMMEDIATELY with defaults
 
 ADVANCED FEATURE HANDLING:
 - For custom text/subtitle colors: Accept color names (white, red, blue, yellow, green, black, cyan, magenta) or hex codes (#FF0000)
@@ -486,15 +546,25 @@ QUERY UNDERSTANDING - BE FLEXIBLE AND INTELLIGENT:
 - "combine videos" = "merge operation with videoUrls"
 - "apply template" = Process multiple operations from template
 - "auto enhance" = Apply suggested enhancements based on video analysis
-- "suggest features" = "analyzeVideo operation"
-- "what should I add?" = "analyzeVideo operation"
+- "analyze" = "analyzeVideo operation" (IMMEDIATE - no questions)
+- "analyze my video" = "analyzeVideo operation" (IMMEDIATE - no questions)
+- "analyze and suggest" = "analyzeVideo operation" (IMMEDIATE - no questions)
+- "suggest features" = "analyzeVideo operation" (IMMEDIATE - no questions)
+- "what should I add?" = "analyzeVideo operation" (IMMEDIATE - no questions)
+- "what would look good" = "analyzeVideo operation" (IMMEDIATE - no questions)
+- "recommend features" = "analyzeVideo operation" (IMMEDIATE - no questions)
+- "what can I improve" = "analyzeVideo operation" (IMMEDIATE - no questions)
+- "suggest improvements" = "analyzeVideo operation" (IMMEDIATE - no questions)
+- "what features work best" = "analyzeVideo operation" (IMMEDIATE - no questions)
+- "analyze my current video" = "analyzeVideo operation" (IMMEDIATE - no questions)
 - "make it look better" = "analyzeVideo" then apply suggestions
 - "improve the video" = "analyzeVideo" then apply auto-enhancements
-- "analyze my video" = "analyzeVideo operation" (show suggestions)
-- "analyze my current video" = "analyzeVideo operation" (show suggestions)
-- "analyze my video and apply whatever needed" = "analyzeVideo" then suggest auto-enhancements
-- "analyze and apply" = "analyzeVideo" then suggest auto-enhancements
-- "auto enhance my video" = Use auto-enhance API to analyze and apply multiple enhancements
+- "analyze my video and apply all" = "analyzeVideo" with autoApply=true (analyze and apply all suggestions)
+- "analyze and apply everything" = "analyzeVideo" with autoApply=true (analyze and apply all suggestions)
+- "analyze my video and apply whatever needed" = "analyzeVideo" with autoApply=true (analyze and apply all suggestions)
+- "analyze and apply" = "analyzeVideo" with autoApply=true (analyze and apply all suggestions)
+- "analyze and apply all" = "analyzeVideo" with autoApply=true (analyze and apply all suggestions)
+- "auto enhance my video" = "analyzeVideo" with autoApply=true (analyze and apply all suggestions)
 
 NATURAL LANGUAGE PATTERNS:
 - "I want to..." = User is requesting a feature, interpret the request
@@ -507,7 +577,27 @@ NATURAL LANGUAGE PATTERNS:
 - "Change..." = Usually modifying existing element
 - "Set..." = Usually adjusting speed, position, or other settings
 
-When interpreting commands, be specific about which preset is being requested and match it exactly from the available presets above. Always prioritize custom properties when user specifies them explicitly. Be intelligent and flexible - understand user intent even if the exact wording doesn't match examples.`
+When interpreting commands, be specific about which preset is being requested and match it exactly from the available presets above. Always prioritize custom properties when user specifies them explicitly. Be intelligent and flexible - understand user intent even if the exact wording doesn't match examples.
+
+🎯 REMEMBER: Your primary goal is to APPLY operations, not ask questions. Only ask when user explicitly requests options or when absolutely critical information is missing. Default to action, not questions.
+
+🔍 ANALYSIS COMMANDS - CRITICAL RULE:
+When user says ANY of these: "analyze", "analyze my video", "suggest", "what should I add", "recommend", "what would look good", "what features", "suggest features", "analyze and suggest" - ALWAYS return {"operation": "analyzeVideo", "params": {}} IMMEDIATELY. DO NOT ask questions. DO NOT ask what they want to analyze. Just analyze the video and return suggestions.
+
+🚀 AUTO-APPLY ANALYSIS - CRITICAL RULE:
+When user says ANY of these: "analyze my video and apply all", "analyze and apply everything", "analyze and apply all", "analyze and apply", "auto enhance my video", "analyze my video and apply whatever needed" - ALWAYS return {"operation": "analyzeVideo", "params": {"autoApply": true}} IMMEDIATELY. This will analyze the video AND automatically apply all suggested features without asking questions.
+
+🎯 SUGGESTION SELECTION - CRITICAL RULE:
+When user clicks/selects a suggestion from analyzeVideo results, they want to APPLY that feature immediately. Parse the recommendation text and apply it directly:
+- "Consider Bold or Cinematic title style" → Apply Bold text (default to first option mentioned)
+- "Apply Cinematic, Golden Hour, or Vintage color grading" → Apply Cinematic color grading (default to first option)
+- "Apply Subtle Blur or Soft Focus" → Apply Subtle Blur effect (default to first option)
+- "Generate speech-to-text subtitles" → Apply addCaptions operation
+- "Add Fade, Cross Dissolve, or Slide transitions" → Apply Fade transition (default to first option)
+- "Add Lo-Fi background music" → Apply addMusic with Lo-Fi preset
+- When recommendation mentions multiple options, use the FIRST one mentioned
+- DO NOT ask which specific option - just apply the first one with sensible defaults
+- Extract the operation type (text, effect, color, transition, music, captions) from the recommendation and apply immediately`
 
 // Rate limiter - 20 requests per minute per user
 const rateLimiter = createRateLimiter(20, 60000)
@@ -704,6 +794,52 @@ export async function POST(request: NextRequest) {
     } else if (instruction.operation === 'analyzeVideo') {
       console.log(`🧠 Starting ${isImage ? 'image' : 'video'} analysis...`)
       const analysisResult = await analyzeVideoContent(videoPublicId, isImage)
+      
+      // Check if user wants to auto-apply all suggestions
+      const autoApply = instruction.params?.autoApply === true || instruction.params?.autoApply === 'true'
+      
+      if (autoApply && analysisResult.suggestions && analysisResult.suggestions.length > 0) {
+        console.log('🚀 Auto-applying all suggestions...')
+        // Apply all suggestions sequentially
+        let currentVideoUrl = inputVideoUrl || ''
+        const appliedFeatures: string[] = []
+        
+        for (const suggestion of analysisResult.suggestions) {
+          try {
+            const recommendation = suggestion.recommendation || ''
+            // Skip suggestions that say "Skip" or don't have actionable content
+            if (recommendation.toLowerCase().includes('skip')) {
+              continue
+            }
+            
+            // Parse and apply the suggestion
+            const applyResult = await applySuggestionAutomatically(
+              recommendation,
+              suggestion.category,
+              videoPublicId,
+              currentVideoUrl,
+              isImage
+            )
+            
+            if (applyResult.success && applyResult.videoUrl) {
+              currentVideoUrl = applyResult.videoUrl
+              appliedFeatures.push(suggestion.category)
+            }
+          } catch (error) {
+            console.error(`⚠️ Failed to apply suggestion "${suggestion.category}":`, error)
+            // Continue with next suggestion
+          }
+        }
+        
+        return NextResponse.json({
+          message: `✅ Analysis complete! Applied ${appliedFeatures.length} enhancements: ${appliedFeatures.join(', ')}`,
+          suggestions: analysisResult.suggestions,
+          analysis: analysisResult.analysis,
+          videoUrl: currentVideoUrl,
+          appliedFeatures,
+        })
+      }
+      
       // Return suggestions without processing video/image
       return NextResponse.json({
         message: analysisResult.message || `${isImage ? 'Image' : 'Video'} analysis complete!`,
@@ -1165,7 +1301,9 @@ async function processCaptionsGeneration(
     
     // Check file size (Whisper has 25MB limit)
     if (arrayBuffer.byteLength > 25 * 1024 * 1024) {
-      console.warn(`⚠️ Video is ${videoSizeMB}MB, Whisper API limit is 25MB. May need to trim or compress.`)
+      const errorMsg = `Video is ${videoSizeMB}MB, but Whisper API limit is 25MB. Please trim your video first (e.g., "trim video to first 30 seconds") or compress it before generating subtitles.`
+      console.error(`❌ ${errorMsg}`)
+      throw new Error(errorMsg)
     }
     
     // Save to temp file for Whisper API
@@ -1193,7 +1331,12 @@ async function processCaptionsGeneration(
     
     // Verify OpenAI API key is available
     if (!process.env.OPENAI_API_KEY) {
-      throw new Error('OPENAI_API_KEY environment variable is not set. Please configure it in Vercel environment variables.')
+      console.error('❌ OPENAI_API_KEY is missing!')
+      throw new Error(
+        'OPENAI_API_KEY environment variable is not set. ' +
+        'Please configure it in Vercel environment variables (Settings → Environment Variables). ' +
+        'Subtitle generation requires OpenAI Whisper API access.'
+      )
     }
     console.log('✅ OpenAI API key is configured (length: ' + process.env.OPENAI_API_KEY.length + ' chars)')
     
@@ -1429,11 +1572,73 @@ async function processCaptionsGeneration(
       console.log(`📊 First caption: "${captions[0].text}" (${captions[0].start}s - ${captions[0].end}s)`)
       console.log(`📊 Last caption: "${captions[captions.length - 1].text}" (${captions[captions.length - 1].start}s - ${captions[captions.length - 1].end}s)`)
       
+      // Generate SRT file from captions
+      const generateSRT = (captions: any[]): string => {
+        let srtContent = ''
+        captions.forEach((cap, index) => {
+          const startTime = cap.start || 0
+          const endTime = cap.end || startTime + 3
+          const text = (cap.text || '').replace(/\*\*/g, '').replace(/\*/g, '').trim()
+          
+          // Convert seconds to SRT time format (HH:MM:SS,mmm)
+          const formatTime = (seconds: number): string => {
+            const hours = Math.floor(seconds / 3600)
+            const minutes = Math.floor((seconds % 3600) / 60)
+            const secs = Math.floor(seconds % 60)
+            const millis = Math.floor((seconds % 1) * 1000)
+            return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')},${String(millis).padStart(3, '0')}`
+          }
+          
+          srtContent += `${index + 1}\n`
+          srtContent += `${formatTime(startTime)} --> ${formatTime(endTime)}\n`
+          srtContent += `${text}\n\n`
+        })
+        return srtContent
+      }
+      
+      const srtContent = generateSRT(captions)
+      console.log(`📝 Generated SRT content (${srtContent.length} chars)`)
+      
+      // Upload SRT file to Cloudinary
+      let subtitleFileUrl: string
+      try {
+        const tempDir = getTempDir()
+        if (!fs.existsSync(tempDir)) {
+          fs.mkdirSync(tempDir, { recursive: true })
+        }
+        const srtFilePath = path.join(tempDir, `subtitles_${Date.now()}.srt`)
+        fs.writeFileSync(srtFilePath, srtContent, 'utf-8')
+        
+        // Upload to Cloudinary
+        const uploadResult = await cloudinary.uploader.upload(srtFilePath, {
+          resource_type: 'raw',
+          folder: 'vedit/subtitles',
+          public_id: `subtitle_${Date.now()}`,
+        })
+        subtitleFileUrl = uploadResult.secure_url
+        console.log(`✅ SRT file uploaded to Cloudinary: ${subtitleFileUrl}`)
+        
+        // Cleanup temp file
+        try {
+          if (fs.existsSync(srtFilePath)) {
+            fs.unlinkSync(srtFilePath)
+          }
+        } catch (cleanupError) {
+          console.error('Failed to cleanup SRT temp file:', cleanupError)
+        }
+      } catch (srtError) {
+        console.error('❌ Failed to upload SRT file:', srtError)
+        throw new Error(`Failed to create subtitle file: ${srtError instanceof Error ? srtError.message : 'Unknown error'}`)
+      }
+      
       // Process video to add captions
       const instruction = {
         operation: 'addCaptions',
         params: {
           captions,
+          subtitleFile: subtitleFileUrl, // Include SRT file URL for Render API
+          subtitleFileUrl: subtitleFileUrl, // Also include as subtitleFileUrl (Render API might expect this)
+          srtFile: subtitleFileUrl, // Alternative parameter name
           style,
           // Include custom subtitle parameters if provided
           ...(customParams || {}),
@@ -1443,6 +1648,7 @@ async function processCaptionsGeneration(
       console.log('🎬 Processing video with captions...')
       console.log('📊 Caption count:', captions.length)
       console.log('📊 Style:', style)
+      console.log('📊 Subtitle file URL:', subtitleFileUrl)
       console.log('📊 Custom params:', customParams)
       
       // Check if we should use Render API for caption processing
@@ -1454,9 +1660,29 @@ async function processCaptionsGeneration(
       if (needsFFmpeg && RENDER_API_URL) {
         console.log(`🌐 Using Render API for caption processing: ${RENDER_API_URL}`)
         try {
+          // Download SRT file and convert to base64 for Render API
+          let srtFileBase64: string | undefined
+          try {
+            const srtResponse = await fetch(subtitleFileUrl)
+            if (srtResponse.ok) {
+              const srtBuffer = await srtResponse.arrayBuffer()
+              srtFileBase64 = Buffer.from(srtBuffer).toString('base64')
+              console.log(`✅ Downloaded SRT file (${srtBuffer.byteLength} bytes) and converted to base64`)
+            }
+          } catch (srtDownloadError) {
+            console.warn(`⚠️ Failed to download SRT file for Render API: ${srtDownloadError}`)
+          }
+          
           const requestBody: any = {
             videoUrl: inputVideoUrl,
-            instruction,
+            instruction: {
+              ...instruction,
+              params: {
+                ...instruction.params,
+                // Include base64 SRT file if available
+                ...(srtFileBase64 ? { subtitleFileBase64: srtFileBase64 } : {}),
+              },
+            },
             publicId: publicId,
           }
           
@@ -1519,10 +1745,15 @@ async function processCaptionsGeneration(
         // Render API not configured
         const isVercel = process.env.VERCEL === '1' || process.env.VERCEL_ENV
         if (isVercel) {
+          console.error('❌ RENDER_API_URL is missing on Vercel!')
           throw new Error(
             `Caption processing failed: RENDER_API_URL is not configured. ` +
-            `On Vercel, Render API is required for caption processing. Please set RENDER_API_URL environment variable.`
+            `On Vercel, Render API is REQUIRED for caption processing (FFmpeg operations). ` +
+            `Please set RENDER_API_URL environment variable in Vercel Dashboard (Settings → Environment Variables). ` +
+            `Example: https://your-render-api.onrender.com`
           )
+        } else {
+          console.log('⚠️ RENDER_API_URL not configured, will try local FFmpeg processing...')
         }
       }
       
@@ -1856,6 +2087,94 @@ async function processVideoEdit(
       `Error code: ${processingError?.code || 'N/A'}. ` +
       `Please check server logs for more details.`
     )
+  }
+}
+
+// Helper function to automatically apply a suggestion
+async function applySuggestionAutomatically(
+  recommendation: string,
+  category: string,
+  publicId: string,
+  currentVideoUrl: string,
+  isImage: boolean
+): Promise<{ success: boolean; videoUrl?: string; error?: string }> {
+  try {
+    // Use OpenAI to parse the recommendation and get the operation
+    const model = process.env.OPENAI_MODEL || 'gpt-4o'
+    const completion = await openai.chat.completions.create({
+      model: model,
+      messages: [
+        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'user', content: recommendation },
+      ],
+      response_format: { type: 'json_object' },
+      max_tokens: 200,
+      temperature: 0.1, // Low temperature for consistent parsing
+    })
+
+    const responseText = completion.choices[0].message.content || '{}'
+    const instruction = JSON.parse(responseText)
+
+    if (!instruction.operation) {
+      return { success: false, error: 'No operation found in suggestion' }
+    }
+
+    // Skip operations that require FFmpeg or complex processing
+    const skipOps = ['addCaptions', 'addTransition', 'addMusic', 'merge', 'trim', 'removeClip']
+    if (skipOps.includes(instruction.operation)) {
+      return { success: false, error: `${instruction.operation} requires full processing pipeline` }
+    }
+
+    // For simple operations, use Cloudinary transforms
+    // Generate a new publicId for the processed result
+    const timestamp = Date.now()
+    const newPublicId = `${publicId}_auto_${timestamp}`
+    
+    const { CloudinaryTransformProcessor } = await import('@/lib/cloudinaryTransform')
+    let processedUrl = currentVideoUrl
+    
+    // Apply the operation using Cloudinary transforms
+    if (instruction.operation === 'addText') {
+      const textUrl = CloudinaryTransformProcessor.addTextOverlay(
+        publicId,
+        {
+          text: instruction.params?.text || 'Your Title Here',
+          position: instruction.params?.position || 'top',
+          fontSize: instruction.params?.fontSize || 48,
+          fontColor: instruction.params?.fontColor || 'white',
+          style: instruction.params?.preset?.toLowerCase() || 'bold',
+        }
+      )
+      // Upload the transformed result to Cloudinary
+      const uploadResult = await cloudinary.uploader.upload(textUrl, {
+        public_id: newPublicId,
+        resource_type: isImage ? 'image' : 'video',
+        folder: 'vedit/processed',
+      })
+      processedUrl = uploadResult.secure_url
+    } else if (instruction.operation === 'colorGrade') {
+      const colorUrl = CloudinaryTransformProcessor.applyColorGrade(
+        publicId,
+        instruction.params?.preset || 'Cinematic LUT',
+        isImage ? 'image' : 'video'
+      )
+      const uploadResult = await cloudinary.uploader.upload(colorUrl, {
+        public_id: newPublicId,
+        resource_type: isImage ? 'image' : 'video',
+        folder: 'vedit/processed',
+      })
+      processedUrl = uploadResult.secure_url
+    } else if (instruction.operation === 'applyEffect') {
+      // Effects are more complex, skip for now or use a simple approach
+      return { success: false, error: 'Effects require full processing pipeline' }
+    } else {
+      return { success: false, error: `Operation ${instruction.operation} not supported in auto-apply` }
+    }
+
+    return { success: true, videoUrl: processedUrl }
+  } catch (error) {
+    console.error('Error applying suggestion:', error)
+    return { success: false, error: (error as Error).message }
   }
 }
 

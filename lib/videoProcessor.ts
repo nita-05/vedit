@@ -1631,10 +1631,9 @@ export class VideoProcessor {
       } else {
         // On Windows: use backslashes for file system operations
         finalOutputPath = path.resolve(normalizedOutputPath)
-        // For FFmpeg on Windows, use backslashes (native format)
-        // Forward slashes were causing "Invalid argument" errors
-        // fluent-ffmpeg should handle backslashes correctly
-        finalOutputPathForFFmpeg = finalOutputPath // Use native Windows path with backslashes
+        // For FFmpeg on Windows, use forward slashes (FFmpeg accepts both, but forward slashes are safer)
+        // Backslashes can cause "Invalid argument" errors in some FFmpeg builds
+        finalOutputPathForFFmpeg = finalOutputPath.replace(/\\/g, '/')
         finalOutputDir = path.dirname(finalOutputPath)
       }
       
@@ -1691,11 +1690,53 @@ export class VideoProcessor {
       }
       
       // Use the determined output path for FFmpeg
+      // On Windows, fluent-ffmpeg needs the path in a specific format
+      let ffmpegOutputPath: string
+      
+      if (process.platform === 'win32' && !isVercelOrLinux()) {
+        // On Windows, use the native path with backslashes
+        // fluent-ffmpeg will handle the escaping internally
+        ffmpegOutputPath = path.resolve(finalOutputPath)
+        console.log(`🪟 Windows detected - using resolved path: ${ffmpegOutputPath}`)
+        
+        // Ensure directory exists
+        const outputDirCheck = path.dirname(ffmpegOutputPath)
+        if (!fs.existsSync(outputDirCheck)) {
+          fs.mkdirSync(outputDirCheck, { recursive: true })
+          console.log(`📁 Created output directory: ${outputDirCheck}`)
+        }
+        
+        // Verify the path is valid by checking if we can write to the directory
+        try {
+          const testFile = path.join(outputDirCheck, `.test_${Date.now()}`)
+          fs.writeFileSync(testFile, 'test')
+          fs.unlinkSync(testFile)
+          console.log(`✅ Output directory is writable: ${outputDirCheck}`)
+        } catch (testError) {
+          console.error(`❌ Output directory write test failed: ${testError}`)
+          reject(new Error(`Cannot write to output directory: ${outputDirCheck}`))
+          return
+        }
+      } else {
+        // On Linux/Vercel, use forward slashes
+        ffmpegOutputPath = finalOutputPathForFFmpeg
+      }
+      
+      // Remove output file if it exists (FFmpeg might have issues with existing files)
+      if (fs.existsSync(finalOutputPath)) {
+        try {
+          fs.unlinkSync(finalOutputPath)
+          console.log(`🗑️ Removed existing output file: ${finalOutputPath}`)
+        } catch (unlinkError) {
+          console.warn(`⚠️ Could not remove existing output file: ${unlinkError}`)
+        }
+      }
+      
       command
-        .output(finalOutputPathForFFmpeg)
+        .output(ffmpegOutputPath)
         .on('start', (commandLine) => {
           console.log('🚀 FFmpeg command:', commandLine)
-          console.log(`📁 Output file path (FFmpeg): ${finalOutputPathForFFmpeg}`)
+          console.log(`📁 Output file path (FFmpeg): ${ffmpegOutputPath}`)
           console.log(`📁 Output file path (FileSystem): ${finalOutputPath}`)
           console.log(`📁 Output directory exists: ${fs.existsSync(finalOutputDirForFS)}`)
           console.log(`📁 Output file exists before FFmpeg: ${fs.existsSync(finalOutputPath)}`)

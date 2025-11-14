@@ -1,0 +1,95 @@
+═══════════════════════════════════════════════════════════════
+  VEDIT DASHBOARD TESTING CHECKLIST
+═══════════════════════════════════════════════════════════════
+
+📍 URL: http://localhost:3000/dashboard (or vedit-theta.vercel.app)
+
+═══════════════════════════════════════════════════════════════
+  ✅ VIA CHAT (AI Assistant)
+═══════════════════════════════════════════════════════════════
+
+[ ] 1. Chat panel visible on right side
+[ ] 2. Type message → Click Send → AI responds
+[ ] 3. Click "Text" button → Input auto-fills → Send → Feature-specific response
+[ ] 4. Click "Effects" button → Feature-specific response
+[ ] 5. Click "Color" button → Feature-specific response
+[ ] 6. Click "Transitions" button → Feature-specific response
+[ ] 7. Click "Music" button → Feature-specific response
+[ ] 8. Click 🎤 microphone → Allow permission → Speak → Transcription appears
+[ ] 9. Click "Clear chat" → All messages cleared
+
+═══════════════════════════════════════════════════════════════
+  ✅ V-EDITOR (Video Editing)
+═══════════════════════════════════════════════════════════════
+
+[ ] 10. Click "Upload Video" → Select file → Video appears in preview
+[ ] 11. Timeline shows clip(s) with thumbnails
+[ ] 12. Hover over clip → Clip scales up (hover effect)
+[ ] 13. Drag clip on timeline → Clip moves smoothly
+[ ] 14. Click clip → Clip selected (highlighted)
+[ ] 15. Click "Trim" → Set start/end times → Apply → Video trims
+[ ] 16. Select 2 clips (Ctrl+Click) → Click "Merge" → Clips merge
+[ ] 17. Click "Export" → Export starts → Download link appears
+
+═══════════════════════════════════════════════════════════════
+  ✅ V-PORT (Publishing)
+═══════════════════════════════════════════════════════════════
+
+[ ] 18. Click "V-Port" button → Modal opens
+[ ] 19. Select platform (YouTube, Instagram, TikTok, etc.)
+[ ] 20. Enter title and description
+[ ] 21. Click "Publish Now" → Success message appears
+[ ] 22. Toggle "Schedule" ON → Select date/time → Click "Schedule"
+[ ] 23. Scheduled post appears in table below
+[ ] 24. Table shows platform, date, time, status correctly
+
+═══════════════════════════════════════════════════════════════
+  ✅ VIA PROFILES (Voice Generation)
+═══════════════════════════════════════════════════════════════
+
+[ ] 25. Click "VIA Profiles" button → Modal opens
+[ ] 26. Scroll to "Generate Voice Over" section
+[ ] 27. Enter text → Character counter shows (e.g., "25 / 4096")
+[ ] 28. Select voice (alloy, echo, fable, onyx, nova, shimmer)
+[ ] 29. Select model (tts-1 or tts-1-hd)
+[ ] 30. Adjust speed slider (0.25-4.0)
+[ ] 31. Click "Generate Voice" → Loading spinner appears
+[ ] 32. Generation completes (5-15 seconds) → Play button appears
+[ ] 33. Click "Play" → Audio plays
+[ ] 34. Click "Download" → File downloads as MP3
+[ ] 35. Test character limit: Enter >4096 chars → Button disabled, error shown
+
+═══════════════════════════════════════════════════════════════
+  ✅ VISUAL ENHANCEMENTS
+═══════════════════════════════════════════════════════════════
+
+[ ] 36. Timeline clips have gradient backgrounds
+[ ] 37. Selected clips have pulsing border animation
+[ ] 38. Drag operations show smooth animations
+[ ] 39. Hover effects work on all interactive elements
+[ ] 40. Loading spinners appear during processing
+
+═══════════════════════════════════════════════════════════════
+  ✅ ERROR HANDLING
+═══════════════════════════════════════════════════════════════
+
+[ ] 41. Invalid API key shows clear error message
+[ ] 42. Network errors trigger retry (check console)
+[ ] 43. File upload errors show user-friendly message
+[ ] 44. Character limit errors show inline warning
+
+═══════════════════════════════════════════════════════════════
+  📊 TEST RESULTS
+═══════════════════════════════════════════════════════════════
+
+Total Tests: 44
+Passed: ___ / 44
+Failed: ___ / 44
+
+Notes:
+_____________________________________________________________
+_____________________________________________________________
+_____________________________________________________________
+
+═══════════════════════════════════════════════════════════════
+

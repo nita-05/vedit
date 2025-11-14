@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo, memo } from 'react'
 import { motion } from 'framer-motion'
 
 interface Clip {
@@ -415,14 +415,15 @@ export default function TimelineView({
     }
   }
 
-  const formatTime = (seconds: number): string => {
+  // Memoize formatTime to avoid recreating on every render
+  const formatTime = useCallback((seconds: number): string => {
     const mins = Math.floor(seconds / 60)
     const secs = Math.floor(seconds % 60)
     return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
+  }, [])
   
   // Generate descriptive clip name based on time range
-  const generateClipName = (start: number, end: number, videoName?: string): string => {
+  const generateClipName = useCallback((start: number, end: number, videoName?: string): string => {
     const startTime = formatTime(start)
     const endTime = formatTime(end)
     const duration = (end - start).toFixed(1)
@@ -432,15 +433,22 @@ export default function TimelineView({
       return `${cleanName} (${startTime}-${endTime})`
     }
     return `Clip ${startTime}-${endTime}`
-  }
+  }, [formatTime])
 
-  const getClipPosition = (start: number) => {
+  // Memoize position calculations
+  const getClipPosition = useCallback((start: number) => {
     return duration > 0 ? (start / duration) * 100 : 0
-  }
+  }, [duration])
 
-  const getClipWidth = (start: number, end: number) => {
+  const getClipWidth = useCallback((start: number, end: number) => {
     return duration > 0 ? ((end - start) / duration) * 100 : 0
-  }
+  }, [duration])
+  
+  // Memoize time markers to avoid recalculating on every render
+  const timeMarkers = useMemo(() => {
+    if (duration <= 0) return []
+    return Array.from({ length: Math.floor(duration) + 1 }).map((_, i) => i)
+  }, [duration])
 
   const addNewTrack = (type: 'video' | 'audio' | 'text' | 'overlay') => {
     const trackId = `track_${type}_${Date.now()}`
@@ -681,7 +689,7 @@ export default function TimelineView({
               >
                 {/* Time markers */}
                 <div className="absolute inset-0 flex">
-                  {Array.from({ length: Math.floor(duration) + 1 }).map((_, i) => (
+                  {timeMarkers.map((i) => (
                     <div
                       key={`${track.id}-marker-${i}`}
                       className="absolute top-0 bottom-0 w-px bg-white/10"
@@ -691,23 +699,36 @@ export default function TimelineView({
                 </div>
 
                 {/* Clips on this track */}
-                {track.clips.map((clip) => (
-                  <div
+                {track.clips.map((clip) => {
+                  const isSelected = selectedClips.has(clip.id) || selectedClip === clip.id
+                  const isDraggingThis = draggingClip === clip.id
+                  const clipDuration = clip.end - clip.start
+                  
+                  return (
+                  <motion.div
                     key={`${track.id}-${clip.id}`}
                     className={`absolute top-0 bottom-0 rounded border-2 ${
                       selectedClips.has(clip.id)
-                        ? 'bg-vedit-purple/30 border-vedit-purple shadow-glow'
+                        ? 'bg-vedit-purple/40 border-vedit-purple shadow-lg shadow-vedit-purple/50'
                         : selectedClip === clip.id
-                        ? 'bg-vedit-blue/30 border-vedit-blue/50'
+                        ? 'bg-vedit-blue/40 border-vedit-blue shadow-lg shadow-vedit-blue/50'
                         : track.type === 'video' 
-                        ? 'bg-vedit-blue/20 border-vedit-blue/50'
+                        ? 'bg-gradient-to-br from-vedit-blue/30 to-vedit-blue/10 border-vedit-blue/60'
                         : track.type === 'audio'
-                        ? 'bg-vedit-purple/20 border-vedit-purple/50'
-                        : 'bg-white/20 border-white/50'
-                    } cursor-move hover:bg-vedit-purple/30 transition-colors`}
+                        ? 'bg-gradient-to-br from-vedit-purple/30 to-vedit-purple/10 border-vedit-purple/60'
+                        : 'bg-gradient-to-br from-white/30 to-white/10 border-white/60'
+                    } cursor-move transition-all duration-200 group`}
                     style={{
                       left: `${getClipPosition(clip.start)}%`,
                       width: `${getClipWidth(clip.start, clip.end)}%`,
+                    }}
+                    animate={{
+                      scale: isDraggingThis ? 1.05 : isSelected ? 1.02 : 1,
+                      opacity: isDraggingThis ? 0.8 : 1,
+                    }}
+                    whileHover={{
+                      scale: 1.03,
+                      zIndex: 10,
                     }}
                     draggable={true}
                     onDragStart={(e: React.DragEvent) => {
@@ -718,12 +739,23 @@ export default function TimelineView({
                       setDragStart(clip.start)
                       e.dataTransfer.effectAllowed = 'move'
                       e.dataTransfer.setData('text/plain', clip.id)
-                      // Make drag image invisible
-                      const dragImage = document.createElement('div')
-                      dragImage.style.opacity = '0'
-                      document.body.appendChild(dragImage)
-                      e.dataTransfer.setDragImage(dragImage, 0, 0)
-                      setTimeout(() => document.body.removeChild(dragImage), 0)
+                      // Create a custom drag preview
+                      const dragPreview = document.createElement('div')
+                      dragPreview.style.cssText = `
+                        position: absolute;
+                        top: -1000px;
+                        padding: 8px 12px;
+                        background: rgba(139, 92, 246, 0.9);
+                        color: white;
+                        border-radius: 6px;
+                        font-size: 12px;
+                        pointer-events: none;
+                        z-index: 9999;
+                      `
+                      dragPreview.textContent = clip.name
+                      document.body.appendChild(dragPreview)
+                      e.dataTransfer.setDragImage(dragPreview, 0, 0)
+                      setTimeout(() => document.body.removeChild(dragPreview), 0)
                       console.log(`🚀 Started dragging clip: ${clip.name}`)
                     }}
                     onDragEnd={(e) => {
@@ -766,13 +798,56 @@ export default function TimelineView({
                       }
                     }}
                   >
-                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                      <span className="text-[10px] text-white font-medium truncate px-1">
+                    {/* Clip thumbnail preview (if video URL available) */}
+                    {clip.videoUrl && track.type === 'video' && (
+                      <div className="absolute inset-0 opacity-30 group-hover:opacity-50 transition-opacity overflow-hidden rounded">
+                        <img 
+                          src={clip.videoUrl} 
+                          alt={clip.name}
+                          className="w-full h-full object-cover"
+                          onError={(e) => {
+                            // Hide thumbnail if image fails to load
+                            e.currentTarget.style.display = 'none'
+                          }}
+                        />
+                        <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                      </div>
+                    )}
+                    
+                    {/* Clip content overlay */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-1 z-10">
+                      <span className="text-[10px] text-white font-semibold truncate w-full text-center drop-shadow-lg">
                         {clip.name}
                       </span>
+                      <span className="text-[9px] text-white/70 mt-0.5">
+                        {formatTime(clipDuration)}
+                      </span>
                     </div>
-                  </div>
-                ))}
+                    
+                    {/* Trim handles (visible on hover/select) */}
+                    {(isSelected || isDraggingThis) && (
+                      <>
+                        <div 
+                          className="absolute left-0 top-0 bottom-0 w-1 bg-vedit-blue cursor-ew-resize hover:w-1.5 transition-all z-20"
+                          title="Drag to trim start"
+                        />
+                        <div 
+                          className="absolute right-0 top-0 bottom-0 w-1 bg-vedit-blue cursor-ew-resize hover:w-1.5 transition-all z-20"
+                          title="Drag to trim end"
+                        />
+                      </>
+                    )}
+                    
+                    {/* Selection indicator */}
+                    {isSelected && (
+                      <motion.div
+                        className="absolute -inset-0.5 border-2 border-vedit-purple rounded pointer-events-none"
+                        animate={{ opacity: [0.5, 1, 0.5] }}
+                        transition={{ duration: 1.5, repeat: Infinity }}
+                      />
+                    )}
+                  </motion.div>
+                )})}
 
                 {/* Playback indicator */}
                 {trackIndex === 0 && (
@@ -799,7 +874,7 @@ export default function TimelineView({
           >
             {/* Time markers */}
             <div className="absolute inset-0 flex">
-              {Array.from({ length: Math.floor(duration) + 1 }).map((_, i) => (
+              {timeMarkers.map((i) => (
                 <div
                   key={`timeline-marker-${i}`}
                   className="absolute top-0 bottom-0 w-px bg-white/10"
@@ -813,19 +888,32 @@ export default function TimelineView({
             </div>
 
             {/* Clips visualization */}
-            {clips.map((clip) => (
+            {clips.map((clip) => {
+              const isSelected = selectedClips.has(clip.id) || selectedClip === clip.id
+              const isDraggingThis = draggingClip === clip.id
+              const clipDuration = clip.end - clip.start
+              
+              return (
               <motion.div
                 key={`timeline-clip-${clip.id}`}
                 className={`absolute top-0 bottom-0 rounded border-2 ${
                   selectedClips.has(clip.id)
-                    ? 'bg-vedit-purple/30 border-vedit-purple shadow-glow'
+                    ? 'bg-vedit-purple/40 border-vedit-purple shadow-lg shadow-vedit-purple/50'
                     : selectedClip === clip.id
-                    ? 'bg-vedit-blue/30 border-vedit-blue/50'
-                    : 'bg-vedit-blue/20 border-vedit-blue/50'
-                } cursor-move hover:bg-vedit-purple/30 transition-colors`}
+                    ? 'bg-vedit-blue/40 border-vedit-blue shadow-lg shadow-vedit-blue/50'
+                    : 'bg-gradient-to-br from-vedit-blue/30 to-vedit-blue/10 border-vedit-blue/60'
+                } cursor-move transition-all duration-200 group`}
                 style={{
                   left: `${getClipPosition(clip.start)}%`,
                   width: `${getClipWidth(clip.start, clip.end)}%`,
+                }}
+                animate={{
+                  scale: isDraggingThis ? 1.05 : isSelected ? 1.02 : 1,
+                  opacity: isDraggingThis ? 0.8 : 1,
+                }}
+                whileHover={{
+                  scale: 1.03,
+                  zIndex: 10,
                 }}
                 onClick={(e) => {
                   e.stopPropagation()
@@ -846,34 +934,63 @@ export default function TimelineView({
                   }
                 }}
               >
+                {/* Clip thumbnail preview (if video URL available) */}
+                {clip.videoUrl && (
+                  <div className="absolute inset-0 opacity-30 group-hover:opacity-50 transition-opacity overflow-hidden rounded">
+                    <img 
+                      src={clip.videoUrl} 
+                      alt={clip.name}
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        e.currentTarget.style.display = 'none'
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent" />
+                  </div>
+                )}
+                
                 {/* Clip trim handles */}
                 <div
-                  className="absolute left-0 top-0 bottom-0 w-3 bg-vedit-purple/50 cursor-ew-resize hover:bg-vedit-purple rounded-l z-10"
+                  className="absolute left-0 top-0 bottom-0 w-2 bg-vedit-purple/60 cursor-ew-resize hover:w-3 hover:bg-vedit-purple rounded-l z-20 transition-all"
                   onMouseDown={(e) => {
                     e.stopPropagation()
                     setIsDragging(true)
                     setDraggingClip(clip.id)
                     setDragType('start')
                   }}
+                  title="Drag to trim start"
                 />
                 <div
-                  className="absolute right-0 top-0 bottom-0 w-3 bg-vedit-purple/50 cursor-ew-resize hover:bg-vedit-purple rounded-r z-10"
+                  className="absolute right-0 top-0 bottom-0 w-2 bg-vedit-purple/60 cursor-ew-resize hover:w-3 hover:bg-vedit-purple rounded-r z-20 transition-all"
                   onMouseDown={(e) => {
                     e.stopPropagation()
                     setIsDragging(true)
                     setDraggingClip(clip.id)
                     setDragType('end')
                   }}
+                  title="Drag to trim end"
                 />
                 
-                {/* Clip label */}
-                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                  <span className="text-xs text-white font-medium truncate px-2">
+                {/* Clip label and duration */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none px-2 z-10">
+                  <span className="text-xs text-white font-semibold truncate w-full text-center drop-shadow-lg">
                     {clip.name}
                   </span>
+                  <span className="text-[10px] text-white/70 mt-0.5">
+                    {formatTime(clipDuration)}
+                  </span>
                 </div>
+                
+                {/* Selection indicator */}
+                {isSelected && (
+                  <motion.div
+                    className="absolute -inset-0.5 border-2 border-vedit-purple rounded pointer-events-none"
+                    animate={{ opacity: [0.5, 1, 0.5] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                  />
+                )}
               </motion.div>
-            ))}
+            )})}
 
             {/* Playback indicator */}
             <motion.div

@@ -277,27 +277,27 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
   }
 
   const handleFeatureButtonClick = (feature: typeof features[0]) => {
-    // Generate direct, feature-specific prompts that focus on ONE feature only
+    // Generate direct, action-oriented prompts that APPLY immediately with defaults
     let command = ''
     
     switch (feature.label) {
       case 'Text':
-        command = 'I want to add text to my video. Suggest 2-3 text overlay options with different styles (like Bold, Cinematic, or Neon Glow) and positions (top, center, bottom). Ask me which one to apply or if I want to customize it.'
+        command = 'Add Bold text to my video at the top position'
         break
       case 'Effects':
-        command = 'I want to add a visual effect to my video. Recommend 2-3 effects (like Glow, VHS, or Light Leak) that would work well. Explain what each effect does and ask which one I want to apply.'
+        command = 'Apply Glow effect to my video with medium intensity'
         break
       case 'Transitions':
-        command = 'I need transitions between clips in my video. Suggest 2-3 transition styles (like Fade, Slide, or Cross Dissolve) and ask which ones I want to add.'
+        command = 'Add Fade transition between clips in my video'
         break
       case 'Music':
-        command = 'I want to add background music to my video. Suggest 2-3 music styles (like Ambient, Upbeat, or Cinematic) that match the video mood. Ask which one to add and what volume level.'
+        command = 'Add Upbeat background music to my video at medium volume'
         break
       case 'Color':
-        command = 'I want to improve the color grading of my video. Suggest 2-3 color styles (like Cinematic, Warm, or Vintage) and explain how each changes the mood. Ask which one to apply.'
+        command = 'Apply Cinematic LUT color grading to my video'
         break
       default:
-        command = `I want to add ${feature.label.toLowerCase()} to my video. What are my options?`
+        command = `Add ${feature.label.toLowerCase()} to my video`
     }
     
     // Populate input field so user can edit and specify details

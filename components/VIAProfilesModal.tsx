@@ -50,6 +50,9 @@ export default function VIAProfilesModal({ isOpen, onClose, onSelectProfile }: V
   const [isGeneratingVoice, setIsGeneratingVoice] = useState(false)
   const [generatedAudioUrl, setGeneratedAudioUrl] = useState<string | null>(null)
   const [audioElement, setAudioElement] = useState<HTMLAudioElement | null>(null)
+  const [ttsModel, setTtsModel] = useState<'tts-1' | 'tts-1-hd'>('tts-1-hd') // Default to HD for better quality
+  const [ttsError, setTtsError] = useState<string | null>(null)
+  const MAX_TEXT_LENGTH = 4096 // OpenAI TTS limit
 
   useEffect(() => {
     if (isOpen) {
@@ -246,16 +249,17 @@ export default function VIAProfilesModal({ isOpen, onClose, onSelectProfile }: V
 
                 <div className="grid grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-white mb-2">Speed</label>
+                    <label className="block text-sm font-medium text-white mb-2">Speed (0.25-4.0)</label>
                     <input
                       type="number"
                       step="0.1"
-                      min="0.5"
-                      max="2.0"
+                      min="0.25"
+                      max="4.0"
                       value={formData.speed}
-                      onChange={(e) => setFormData({ ...formData, speed: parseFloat(e.target.value) })}
+                      onChange={(e) => setFormData({ ...formData, speed: parseFloat(e.target.value) || 1.0 })}
                       className="w-full px-4 py-2 rounded-xl bg-black/30 border border-white/20 text-white focus:outline-none focus:border-vedit-purple"
                     />
+                    <p className="text-xs text-gray-400 mt-1">OpenAI TTS supports 0.25x to 4.0x speed</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-white mb-2">Pitch</label>
@@ -267,7 +271,9 @@ export default function VIAProfilesModal({ isOpen, onClose, onSelectProfile }: V
                       value={formData.pitch}
                       onChange={(e) => setFormData({ ...formData, pitch: parseFloat(e.target.value) })}
                       className="w-full px-4 py-2 rounded-xl bg-black/30 border border-white/20 text-white focus:outline-none focus:border-vedit-purple"
+                      disabled
                     />
+                    <p className="text-xs text-gray-500 mt-1">Note: OpenAI TTS doesn't support pitch</p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium text-white mb-2">Volume</label>
@@ -279,7 +285,9 @@ export default function VIAProfilesModal({ isOpen, onClose, onSelectProfile }: V
                       value={formData.volume}
                       onChange={(e) => setFormData({ ...formData, volume: parseFloat(e.target.value) })}
                       className="w-full px-4 py-2 rounded-xl bg-black/30 border border-white/20 text-white focus:outline-none focus:border-vedit-purple"
+                      disabled
                     />
+                    <p className="text-xs text-gray-500 mt-1">Note: OpenAI TTS doesn't support volume</p>
                   </div>
                 </div>
 
@@ -341,15 +349,55 @@ export default function VIAProfilesModal({ isOpen, onClose, onSelectProfile }: V
                 {/* Text-to-Speech Section */}
                 <div className="p-4 bg-vedit-blue/10 border border-vedit-blue/30 rounded-xl">
                   <div className="flex items-center justify-between mb-3">
-                    <label className="text-sm font-medium text-white">🎤 Generate Voice Over</label>
+                    <label className="text-sm font-medium text-white">🎤 Generate Voice Over (OpenAI TTS)</label>
                   </div>
+                  
+                  {/* Model Selection */}
+                  <div className="mb-3 flex items-center gap-3">
+                    <label className="text-xs text-gray-300">Model:</label>
+                    <select
+                      value={ttsModel}
+                      onChange={(e) => setTtsModel(e.target.value as 'tts-1' | 'tts-1-hd')}
+                      className="px-2 py-1 rounded-lg bg-black/30 border border-white/10 text-white text-xs focus:outline-none focus:border-vedit-blue"
+                    >
+                      <option value="tts-1">tts-1 (Faster)</option>
+                      <option value="tts-1-hd">tts-1-hd (Better Quality)</option>
+                    </select>
+                    <span className="text-xs text-gray-400">
+                      Speed: {formData.speed}x (0.25-4.0)
+                    </span>
+                  </div>
+                  
                   <textarea
                     value={ttsScript}
-                    onChange={(e) => setTtsScript(e.target.value)}
-                    placeholder="Enter text to generate voiceover..."
-                    className="w-full px-3 py-2 rounded-lg bg-black/30 border border-white/10 text-white text-sm focus:outline-none focus:border-vedit-blue mb-3 resize-none"
+                    onChange={(e) => {
+                      setTtsScript(e.target.value)
+                      setTtsError(null) // Clear error on input
+                    }}
+                    placeholder="Enter text to generate voiceover using OpenAI TTS..."
+                    className={`w-full px-3 py-2 rounded-lg bg-black/30 border ${
+                      ttsScript.length > MAX_TEXT_LENGTH 
+                        ? 'border-red-500/50' 
+                        : 'border-white/10'
+                    } text-white text-sm focus:outline-none focus:border-vedit-blue mb-2 resize-none`}
                     rows={3}
+                    maxLength={MAX_TEXT_LENGTH + 100} // Allow slight overflow for warning
                   />
+                  <div className="flex items-center justify-between mb-3">
+                    <span className={`text-xs ${
+                      ttsScript.length > MAX_TEXT_LENGTH 
+                        ? 'text-red-400' 
+                        : ttsScript.length > MAX_TEXT_LENGTH * 0.9
+                        ? 'text-yellow-400'
+                        : 'text-gray-400'
+                    }`}>
+                      {ttsScript.length} / {MAX_TEXT_LENGTH} characters
+                      {ttsScript.length > MAX_TEXT_LENGTH && ' (Exceeds limit!)'}
+                    </span>
+                    {ttsError && (
+                      <span className="text-xs text-red-400">{ttsError}</span>
+                    )}
+                  </div>
                   <div className="flex gap-2">
                     <button
                       onClick={async () => {
@@ -357,65 +405,103 @@ export default function VIAProfilesModal({ isOpen, onClose, onSelectProfile }: V
                           alert('Please enter text to generate voiceover')
                           return
                         }
-                        setIsGeneratingVoice(true)
-                        try {
-                          // Use Web Speech API for text-to-speech
-                          if ('speechSynthesis' in window) {
-                            // Create audio using Web Speech API
-                            const utterance = new SpeechSynthesisUtterance(ttsScript)
-                            utterance.voice = speechSynthesis.getVoices().find(v => v.name.includes(formData.voice)) || null
-                            utterance.rate = formData.speed
-                            utterance.pitch = formData.pitch
-                            utterance.volume = formData.volume
+                        // Validate text length before sending
+                        if (ttsScript.length > MAX_TEXT_LENGTH) {
+                          setTtsError(`Text exceeds maximum length of ${MAX_TEXT_LENGTH} characters. Please shorten your text.`)
+                          return
+                        }
 
-                            // Generate audio blob (simplified - in production, use a proper TTS API)
-                            const audio = new Audio()
-                            const audioUrl = await new Promise<string>((resolve) => {
-                              utterance.onend = () => {
-                                // In a real implementation, you'd capture the audio
-                                // For now, we'll use a placeholder
-                                resolve('data:audio/wav;base64,UklGRnoGAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQoGAACBhYqFbF1fdJivrJBhNjVgodDbq2EcBj+a2/LDciUFLIHO8tiJNwgZaLvt559NEAxQp+PwtmMcBjiR1/LMeSwFJHfH8N2QQAoUXrTp67hVFApGn+DyvmwhBSuBzvLZiTYIGWi77+efTRAMUKfj8LZjHAY4kdfyzHksBSR3x/DdkEAKFF606eu4VRQKRp/g8r5sIQUrgc7y2Yk2CBlou+/nn00QDFCn4/C2YxwGOJHX8sx5LAUkd8fw3ZBAC')
+                        setIsGeneratingVoice(true)
+                        setTtsError(null)
+                        setGeneratedAudioUrl(null) // Clear previous audio
+                        
+                        try {
+                          // Use OpenAI TTS API for high-quality voice generation
+                          console.log('🎤 Generating voice with OpenAI TTS...', {
+                            text: ttsScript.substring(0, 50) + '...',
+                            voice: formData.voice,
+                            speed: formData.speed,
+                            model: ttsModel,
+                            length: ttsScript.length,
+                          })
+
+                          // Retry logic for transient errors
+                          let retries = 2
+                          let lastError: any = null
+                          
+                          while (retries >= 0) {
+                            try {
+                              const response = await fetch('/api/tts', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                  text: ttsScript,
+                                  voice: formData.voice, // OpenAI voice: alloy, echo, fable, onyx, nova, shimmer
+                                  model: ttsModel, // User-selected model: tts-1 or tts-1-hd
+                                  speed: Math.max(0.25, Math.min(4.0, formData.speed)), // Clamp to OpenAI's range (0.25-4.0)
+                                }),
+                              })
+
+                              const data = await response.json()
+                              
+                              if (data.success && data.audioUrl) {
+                                console.log('✅ Voice generated successfully:', data.audioUrl)
+                                setGeneratedAudioUrl(data.audioUrl)
+                                const audio = new Audio(data.audioUrl)
+                                setAudioElement(audio)
+                                
+                                // Show warning if using fallback storage
+                                if (data.warning) {
+                                  console.warn('⚠️', data.warning)
+                                }
+                                break // Success, exit retry loop
+                              } else {
+                                throw new Error(data.error || data.details || 'Failed to generate voice')
                               }
-                              speechSynthesis.speak(utterance)
-                            })
-                            setGeneratedAudioUrl(audioUrl)
-                            setAudioElement(audio)
-                            audio.src = audioUrl
-                            alert('Voice generated successfully! Click Play to hear it.')
-                          } else {
-                            // Fallback: Use API route
-                            const response = await fetch('/api/via/voice', {
-                              method: 'POST',
-                              headers: { 'Content-Type': 'application/json' },
-                              body: JSON.stringify({
-                                text: ttsScript,
-                                voice: formData.voice,
-                                speed: formData.speed,
-                                pitch: formData.pitch,
-                                volume: formData.volume,
-                              }),
-                            })
-                            const data = await response.json()
-                            if (data.success && data.audioUrl) {
-                              setGeneratedAudioUrl(data.audioUrl)
-                              const audio = new Audio(data.audioUrl)
-                              setAudioElement(audio)
-                              alert('Voice generated successfully! Click Play to hear it.')
-                            } else {
-                              throw new Error(data.error || 'Failed to generate voice')
+                            } catch (fetchError: any) {
+                              lastError = fetchError
+                              // Only retry on network errors or 5xx errors
+                              if (retries > 0 && (
+                                fetchError.message?.includes('fetch') || 
+                                fetchError.message?.includes('network') ||
+                                fetchError.status >= 500
+                              )) {
+                                console.log(`⚠️ Retry attempt ${3 - retries}...`)
+                                await new Promise(resolve => setTimeout(resolve, 1000)) // Wait 1s before retry
+                                retries--
+                              } else {
+                                throw fetchError
+                              }
                             }
                           }
-                        } catch (error) {
-                          console.error('TTS error:', error)
-                          alert('Failed to generate voice. Please try again.')
+                          
+                          if (lastError && !generatedAudioUrl) {
+                            throw lastError
+                          }
+                        } catch (error: any) {
+                          console.error('❌ TTS error:', error)
+                          const errorMessage = error?.message || error?.error || 'Failed to generate voice. Please check your OpenAI API key and try again.'
+                          setTtsError(errorMessage)
+                          
+                          // Show alert for critical errors
+                          if (error?.status === 401 || error?.status === 429) {
+                            alert(errorMessage)
+                          }
                         } finally {
                           setIsGeneratingVoice(false)
                         }
                       }}
-                      disabled={isGeneratingVoice || !ttsScript.trim()}
+                      disabled={isGeneratingVoice || !ttsScript.trim() || ttsScript.length > MAX_TEXT_LENGTH}
                       className="flex-1 px-3 py-2 rounded-lg bg-gradient-to-r from-vedit-blue to-vedit-purple text-white text-sm font-medium hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {isGeneratingVoice ? '⏳ Generating...' : '🎤 Generate Voice'}
+                      {isGeneratingVoice ? (
+                        <span className="flex items-center gap-2">
+                          <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                          Generating...
+                        </span>
+                      ) : (
+                        '🎤 Generate Voice'
+                      )}
                     </button>
                     {generatedAudioUrl && audioElement && (
                       <>
@@ -432,11 +518,25 @@ export default function VIAProfilesModal({ isOpen, onClose, onSelectProfile }: V
                           ▶️ Play
                         </button>
                         <button
-                          onClick={() => {
-                            const link = document.createElement('a')
-                            link.href = generatedAudioUrl
-                            link.download = `voiceover_${Date.now()}.mp3`
-                            link.click()
+                          onClick={async () => {
+                            if (!generatedAudioUrl) return
+                            try {
+                              // Download from Cloudinary URL
+                              const response = await fetch(generatedAudioUrl)
+                              const blob = await response.blob()
+                              const url = window.URL.createObjectURL(blob)
+                              const link = document.createElement('a')
+                              link.href = url
+                              link.download = `voiceover_${Date.now()}.mp3`
+                              document.body.appendChild(link)
+                              link.click()
+                              document.body.removeChild(link)
+                              window.URL.revokeObjectURL(url)
+                            } catch (error) {
+                              console.error('Download error:', error)
+                              // Fallback: open in new tab
+                              window.open(generatedAudioUrl, '_blank')
+                            }
                           }}
                           className="px-3 py-2 rounded-lg bg-white/10 border border-white/20 text-white text-sm hover:bg-white/20 transition-colors"
                         >
