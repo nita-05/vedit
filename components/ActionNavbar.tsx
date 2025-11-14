@@ -277,32 +277,27 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
   }
 
   const handleFeatureButtonClick = (feature: typeof features[0]) => {
-    // Generate smart, contextual prompts that trigger intelligent VIA chat responses
+    // Generate direct, feature-specific prompts that focus on ONE feature only
     let command = ''
     
     switch (feature.label) {
       case 'Text':
-        command =
-          'Analyze the current video and propose 2-3 smart text overlays (content, style, placement). Suggest options and ask me to confirm or customize before applying.'
+        command = 'I want to add text to my video. Suggest 2-3 text overlay options with different styles (like Bold, Cinematic, or Neon Glow) and positions (top, center, bottom). Ask me which one to apply or if I want to customize it.'
         break
       case 'Effects':
-        command =
-          'Review my video and recommend 2-3 visual effects (e.g., Glow, VHS, Light Leak) that enhance the footage. Explain where each effect fits best and offer to apply my choice.'
+        command = 'I want to add a visual effect to my video. Recommend 2-3 effects (like Glow, VHS, or Light Leak) that would work well. Explain what each effect does and ask which one I want to apply.'
         break
       case 'Transitions':
-        command =
-          'Look at my clip layout and suggest smooth transitions for the cut points. Recommend the best style for each transition and ask which ones to apply.'
+        command = 'I need transitions between clips in my video. Suggest 2-3 transition styles (like Fade, Slide, or Cross Dissolve) and ask which ones I want to add.'
         break
       case 'Music':
-        command =
-          'Check the video mood and recommend background music options (genre + energy). Include volume guidance and offer to add the best match.'
+        command = 'I want to add background music to my video. Suggest 2-3 music styles (like Ambient, Upbeat, or Cinematic) that match the video mood. Ask which one to add and what volume level.'
         break
       case 'Color':
-        command =
-          'Analyze the footage and suggest 2-3 color grading looks (e.g., Cinematic Teal-Orange, Warm Glow, Noir). Tell me how each affects the mood and ask which to apply.'
+        command = 'I want to improve the color grading of my video. Suggest 2-3 color styles (like Cinematic, Warm, or Vintage) and explain how each changes the mood. Ask which one to apply.'
         break
       default:
-        command = `I want to apply ${feature.label.toLowerCase()} to my video. Can you guide me through the best options?`
+        command = `I want to add ${feature.label.toLowerCase()} to my video. What are my options?`
     }
     
     // Populate input field so user can edit and specify details
