@@ -3,8 +3,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-const createFFmpegPromise = () => import('@ffmpeg/ffmpeg').then(mod => mod.createFFmpeg)
-const fetchFilePromise = () => import('@ffmpeg/util').then(mod => mod.fetchFile)
+// Dynamic imports for FFmpeg.wasm (client-side only)
+// Using type assertions to avoid build-time type checking issues
+const getFFmpegModule = async () => {
+  if (typeof window === 'undefined') return null
+  try {
+    const mod: any = await import('@ffmpeg/ffmpeg')
+    // Handle different export formats
+    return mod.FFmpeg || mod.default?.FFmpeg || mod.default || null
+  } catch {
+    return null
+  }
+}
+const getFetchFile = async () => {
+  if (typeof window === 'undefined') return null
+  try {
+    const mod: any = await import('@ffmpeg/util')
+    return mod.fetchFile || mod.default?.fetchFile || mod.default || null
+  } catch {
+    return null
+  }
+}
 
 interface VideoClip {
   id: string
@@ -49,21 +68,29 @@ export default function VEditor() {
   }, [])
 
   const loadFFmpeg = useCallback(async () => {
-    if (!supportsWebAssembly || ffmpegReady || isLoadingFFmpeg) {
+    if (typeof window === 'undefined' || !supportsWebAssembly || ffmpegReady || isLoadingFFmpeg) {
       return
     }
 
     try {
       setIsLoadingFFmpeg(true)
-      const [createFFmpeg, fetchFile] = await Promise.all([createFFmpegPromise(), fetchFilePromise()])
+      const [FFmpegClass, fetchFile] = await Promise.all([getFFmpegModule(), getFetchFile()])
+      
+      if (!FFmpegClass || !fetchFile) {
+        throw new Error('FFmpeg modules not available')
+      }
+      
       fetchFileRef.current = fetchFile
 
-      ffmpegRef.current = createFFmpeg({
+      // Use FFmpeg class directly (new API)
+      // Type assertion to avoid build-time type checking
+      const FFmpegInstance = FFmpegClass as any
+      ffmpegRef.current = new FFmpegInstance({
         log: false,
         corePath: 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/ffmpeg-core.js',
       })
 
-      await ffmpegRef.current.load()
+      await (ffmpegRef.current as any).load()
       setFfmpegReady(true)
     } catch (error) {
       console.error('Failed to load FFmpeg:', error)
