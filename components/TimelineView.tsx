@@ -730,6 +730,9 @@ export default function TimelineView({
                       scale: 1.03,
                       zIndex: 10,
                     }}
+                  >
+                  <div
+                    className="w-full h-full"
                     draggable={true}
                     onDragStart={(e: React.DragEvent) => {
                       e.stopPropagation()
@@ -758,7 +761,7 @@ export default function TimelineView({
                       setTimeout(() => document.body.removeChild(dragPreview), 0)
                       console.log(`🚀 Started dragging clip: ${clip.name}`)
                     }}
-                    onDragEnd={(e) => {
+                    onDragEnd={(e: React.DragEvent) => {
                       e.stopPropagation()
                       setIsDragging(false)
                       setDraggingClip(null)
