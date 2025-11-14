@@ -1185,6 +1185,13 @@ async function processCaptionsGeneration(
     
     // Use Whisper with timestamped output for better accuracy
     let transcription: any
+    
+    // Verify OpenAI API key is available
+    if (!process.env.OPENAI_API_KEY) {
+      throw new Error('OPENAI_API_KEY environment variable is not set. Please configure it in Vercel environment variables.')
+    }
+    console.log('✅ OpenAI API key is configured (length: ' + process.env.OPENAI_API_KEY.length + ' chars)')
+    
     try {
       // Read file as buffer first to ensure it's valid
       const fileBuffer = fs.readFileSync(tempFilePath)
@@ -1860,13 +1867,60 @@ async function analyzeVideoContent(publicId: string, isImage: boolean = false): 
     console.log(`📺 ${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)} URL: ${mediaUrl}`)
     
     // Get media metadata for analysis
-    const duration = isImage ? 0 : (resource.duration || 0)
+    let duration = isImage ? 0 : (resource.duration || 0)
     const format = resource.format || (isImage ? 'jpg' : 'mp4')
     const width = resource.width || 1920
     const height = resource.height || 1080
     const size = resource.bytes || 0
     
-    console.log(`📊 ${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)} metadata: ${isImage ? 'N/A' : duration + 's'}, ${width}x${height}, ${(size/1024/1024).toFixed(2)}MB`)
+    // If duration is 0 or missing, try to get it from video metadata
+    if (!isImage && (!duration || duration === 0)) {
+      try {
+        // Try to get duration from video_info if available
+        if (resource.video && resource.video.duration) {
+          duration = resource.video.duration
+        } else if (resource.context && resource.context.custom && resource.context.custom.duration) {
+          duration = parseFloat(resource.context.custom.duration)
+        } else {
+          // Fallback: Try to fetch video and get duration using FFprobe
+          console.log('📥 Fetching video to detect duration...')
+          const videoResponse = await fetch(mediaUrl)
+          if (videoResponse.ok) {
+            const tempDir = getTempDir()
+            if (!fs.existsSync(tempDir)) {
+              fs.mkdirSync(tempDir, { recursive: true })
+            }
+            const tempFilePath = path.join(tempDir, `duration_check_${Date.now()}.mp4`)
+            const arrayBuffer = await videoResponse.arrayBuffer()
+            fs.writeFileSync(tempFilePath, Buffer.from(arrayBuffer))
+            
+            // Use FFprobe to get duration
+            await new Promise<void>((resolve, reject) => {
+              ffmpeg.ffprobe(tempFilePath, (err: any, metadata: any) => {
+                if (!err && metadata && metadata.format && metadata.format.duration) {
+                  duration = Math.round(metadata.format.duration * 10) / 10 // Round to 1 decimal
+                  console.log(`✅ Detected video duration: ${duration}s`)
+                } else {
+                  console.warn('⚠️ Could not detect video duration, using default')
+                }
+                // Cleanup
+                try {
+                  if (fs.existsSync(tempFilePath)) {
+                    fs.unlinkSync(tempFilePath)
+                  }
+                } catch {}
+                resolve()
+              })
+            })
+          }
+        }
+      } catch (durationError) {
+        console.warn('⚠️ Could not detect video duration:', durationError)
+        // Keep duration as 0 if detection fails
+      }
+    }
+    
+    console.log(`📊 ${mediaType.charAt(0).toUpperCase() + mediaType.slice(1)} metadata: ${isImage ? 'N/A' : duration.toFixed(1) + 's'}, ${width}x${height}, ${(size/1024/1024).toFixed(2)}MB`)
     
     // Provide AI-powered suggestions based on video metadata
     const suggestions = [
