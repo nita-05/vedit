@@ -124,7 +124,9 @@ OUTLINES/SHADOWS: When the user mentions outline/glow/shadow, prefer presets tha
 Example: "Show text 'Hello' from 2 to 5 seconds" → {"operation": "addText", "params": {"text": "Hello", "preset": "Bold", "startTime": 2, "endTime": 5}}
 
 📝 CAPTIONS/SUBTITLES (operation: "addCaptions"):
-Automatically generate speech-to-text subtitles from video audio. Use when user requests "subtitle" or "captions". 
+CRITICAL: This operation IS AVAILABLE and WORKS. When user requests "subtitle", "subtitles", "captions", "caption", "add subtitles", "generate subtitles", "add captions", "generate captions", "speech to text", "transcribe", or any variation - ALWAYS return {"operation": "addCaptions", "params": {...}} IMMEDIATELY. DO NOT say you can't do it. DO NOT ask if they have a transcript. The system will automatically transcribe the video audio using Whisper API.
+
+Automatically generate speech-to-text subtitles from video audio using OpenAI Whisper API. 
 DEFAULT BEHAVIOR: Apply immediately with defaults (bottom position, medium size, white color, Glow style) unless user specifies preferences
 ONLY ask questions if user explicitly says "ask me about subtitles" or "what options for subtitles"
 If user provides ANY details (position, color, size, style), apply immediately with those preferences
