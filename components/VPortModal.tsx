@@ -262,28 +262,76 @@ export default function VPortModal({ isOpen, onClose, onPublish, videoUrl, video
           )}
 
           {/* Scheduled Posts List */}
-          {scheduleMode && scheduledPosts.length > 0 && (
+          {scheduleMode && (
             <div className="mt-6 p-4 bg-white/5 border border-white/10 rounded-xl">
               <h3 className="text-white font-semibold mb-3">📅 Scheduled Posts</h3>
-              <div className="space-y-2">
-                {scheduledPosts.map((post: any) => (
-                  <div key={post.id} className="flex items-center justify-between p-2 bg-black/30 rounded">
-                    <div>
-                      <p className="text-sm text-white">{platforms.find(p => p.id === post.platform)?.name}</p>
-                      <p className="text-xs text-gray-400">
-                        {new Date(post.scheduledAt).toLocaleString()}
-                      </p>
-                    </div>
-                    <span className={`text-xs px-2 py-1 rounded ${
-                      new Date(post.scheduledAt) > new Date() 
-                        ? 'bg-green-500/20 text-green-400' 
-                        : 'bg-gray-500/20 text-gray-400'
-                    }`}>
-                      {new Date(post.scheduledAt) > new Date() ? 'Scheduled' : 'Published'}
-                    </span>
-                  </div>
-                ))}
-              </div>
+              {scheduledPosts.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b border-white/10">
+                        <th className="text-left py-2 px-3 text-gray-300 font-medium">Platform</th>
+                        <th className="text-left py-2 px-3 text-gray-300 font-medium">Scheduled Date</th>
+                        <th className="text-left py-2 px-3 text-gray-300 font-medium">Status</th>
+                        <th className="text-left py-2 px-3 text-gray-300 font-medium">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scheduledPosts.map((post: any) => (
+                        <tr key={post.id} className="border-b border-white/5 hover:bg-white/5 transition-colors">
+                          <td className="py-2 px-3 text-white">
+                            <div className="flex items-center gap-2">
+                              <span className="text-lg">
+                                {platforms.find(p => p.id === post.platform)?.icon}
+                              </span>
+                              <span>{platforms.find(p => p.id === post.platform)?.name}</span>
+                            </div>
+                          </td>
+                          <td className="py-2 px-3 text-gray-300">
+                            {new Date(post.scheduledAt).toLocaleString('en-US', {
+                              year: 'numeric',
+                              month: 'short',
+                              day: 'numeric',
+                              hour: '2-digit',
+                              minute: '2-digit',
+                            })}
+                          </td>
+                          <td className="py-2 px-3">
+                            <span className={`text-xs px-2 py-1 rounded ${
+                              new Date(post.scheduledAt) > new Date() 
+                                ? 'bg-green-500/20 text-green-400 border border-green-500/30' 
+                                : 'bg-gray-500/20 text-gray-400 border border-gray-500/30'
+                            }`}>
+                              {new Date(post.scheduledAt) > new Date() ? '⏰ Scheduled' : '✅ Published'}
+                            </span>
+                          </td>
+                          <td className="py-2 px-3">
+                            {new Date(post.scheduledAt) > new Date() && (
+                              <button
+                                onClick={() => {
+                                  if (confirm('Cancel this scheduled post?')) {
+                                    // TODO: Implement cancel functionality
+                                    alert('Cancel functionality coming soon')
+                                  }
+                                }}
+                                className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                              >
+                                Cancel
+                              </button>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="text-center py-8 text-gray-400">
+                  <div className="text-3xl mb-2">📅</div>
+                  <p className="text-sm">No scheduled posts yet</p>
+                  <p className="text-xs mt-1">Schedule your first post above</p>
+                </div>
+              )}
             </div>
           )}
         </motion.div>

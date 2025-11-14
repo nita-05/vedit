@@ -683,7 +683,7 @@ export default function TimelineView({
                 <div className="absolute inset-0 flex">
                   {Array.from({ length: Math.floor(duration) + 1 }).map((_, i) => (
                     <div
-                      key={i}
+                      key={`${track.id}-marker-${i}`}
                       className="absolute top-0 bottom-0 w-px bg-white/10"
                       style={{ left: `${(i / duration) * 100}%` }}
                     />
@@ -693,7 +693,7 @@ export default function TimelineView({
                 {/* Clips on this track */}
                 {track.clips.map((clip) => (
                   <div
-                    key={clip.id}
+                    key={`${track.id}-${clip.id}`}
                     className={`absolute top-0 bottom-0 rounded border-2 ${
                       selectedClips.has(clip.id)
                         ? 'bg-vedit-purple/30 border-vedit-purple shadow-glow'
@@ -801,7 +801,7 @@ export default function TimelineView({
             <div className="absolute inset-0 flex">
               {Array.from({ length: Math.floor(duration) + 1 }).map((_, i) => (
                 <div
-                  key={i}
+                  key={`timeline-marker-${i}`}
                   className="absolute top-0 bottom-0 w-px bg-white/10"
                   style={{ left: `${(i / duration) * 100}%` }}
                 >
@@ -815,7 +815,7 @@ export default function TimelineView({
             {/* Clips visualization */}
             {clips.map((clip) => (
               <motion.div
-                key={clip.id}
+                key={`timeline-clip-${clip.id}`}
                 className={`absolute top-0 bottom-0 rounded border-2 ${
                   selectedClips.has(clip.id)
                     ? 'bg-vedit-purple/30 border-vedit-purple shadow-glow'
@@ -920,7 +920,7 @@ export default function TimelineView({
       <div className="space-y-2">
         {clips.length > 0 ? clips.map((clip, index) => (
           <motion.div
-            key={clip.id}
+            key={`clip-list-${clip.id}`}
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: index * 0.1 }}

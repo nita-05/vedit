@@ -70,3 +70,40 @@ html {
 .scrollbar-hide::-webkit-scrollbar {
   display: none;
 }
+
+/* Light theme support */
+html.light {
+  --foreground-rgb: 0, 0, 0;
+  --background-start-rgb: 255, 255, 255;
+  --background-end-rgb: 255, 255, 255;
+}
+
+html.light body {
+  background: linear-gradient(
+      to bottom,
+      transparent,
+      rgb(var(--background-end-rgb))
+    )
+    rgb(var(--background-start-rgb));
+  color: rgb(var(--foreground-rgb));
+}
+
+html.light .backdrop-blur-xl {
+  background: rgba(255, 255, 255, 0.8);
+}
+
+html.light .bg-white\/10 {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+html.light .text-white {
+  color: rgb(0, 0, 0);
+}
+
+html.light .text-gray-300 {
+  color: rgb(75, 85, 99);
+}
+
+html.light .text-gray-400 {
+  color: rgb(107, 114, 128);
+}

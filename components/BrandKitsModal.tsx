@@ -242,7 +242,13 @@ export default function BrandKitsModal({ isOpen, onClose, onSelectKit, onApplyKi
                   <div className="flex items-center gap-4">
                     {formData.logoUrl ? (
                       <div className="relative">
-                        <img src={formData.logoUrl} alt="Logo" className="w-24 h-24 object-contain rounded-lg" />
+                        <img
+                          src={formData.logoUrl}
+                          alt="Logo"
+                          className="w-24 h-24 object-contain rounded-lg"
+                          loading="lazy"
+                          decoding="async"
+                        />
                         <button
                           onClick={() => setFormData({ ...formData, logoUrl: '' })}
                           className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full text-white text-xs"
@@ -346,7 +352,13 @@ export default function BrandKitsModal({ isOpen, onClose, onSelectKit, onApplyKi
                   <div className="flex items-center gap-4">
                     {formData.watermark ? (
                       <div className="relative">
-                        <img src={formData.watermark} alt="Watermark" className="w-24 h-24 object-contain rounded-lg opacity-50" />
+                        <img
+                          src={formData.watermark}
+                          alt="Watermark"
+                          className="w-24 h-24 object-contain rounded-lg opacity-50"
+                          loading="lazy"
+                          decoding="async"
+                        />
                         <button
                           onClick={() => setFormData({ ...formData, watermark: '' })}
                           className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 rounded-full text-white text-xs"
@@ -421,7 +433,13 @@ export default function BrandKitsModal({ isOpen, onClose, onSelectKit, onApplyKi
                           <div>
                             <h3 className="text-lg font-semibold text-white">{kit.name}</h3>
                             {kit.logoUrl && (
-                              <img src={kit.logoUrl} alt="Logo" className="w-16 h-16 object-contain mt-2" />
+                              <img
+                                src={kit.logoUrl}
+                                alt="Logo"
+                                className="w-16 h-16 object-contain mt-2"
+                                loading="lazy"
+                                decoding="async"
+                              />
                             )}
                           </div>
                         </div>

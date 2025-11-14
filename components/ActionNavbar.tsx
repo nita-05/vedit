@@ -277,27 +277,32 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
   }
 
   const handleFeatureButtonClick = (feature: typeof features[0]) => {
-    // Generate a command that triggers interactive questions
+    // Generate smart, contextual prompts that trigger intelligent VIA chat responses
     let command = ''
     
     switch (feature.label) {
       case 'Text':
-        command = 'I want to add text - please ask me what text content, style, position, size, and other options I want'
+        command =
+          'Analyze the current video and propose 2-3 smart text overlays (content, style, placement). Suggest options and ask me to confirm or customize before applying.'
         break
       case 'Effects':
-        command = 'I want to add an effect - please ask me which effect, intensity, and where to apply it'
+        command =
+          'Review my video and recommend 2-3 visual effects (e.g., Glow, VHS, Light Leak) that enhance the footage. Explain where each effect fits best and offer to apply my choice.'
         break
       case 'Transitions':
-        command = 'I want to add a transition - please ask me which transition type, duration, and when to apply it'
+        command =
+          'Look at my clip layout and suggest smooth transitions for the cut points. Recommend the best style for each transition and ask which ones to apply.'
         break
       case 'Music':
-        command = 'I want to add music - please ask me which music style, volume level, and timing options'
+        command =
+          'Check the video mood and recommend background music options (genre + energy). Include volume guidance and offer to add the best match.'
         break
       case 'Color':
-        command = 'I want to apply color grading - please ask me which color style and intensity I prefer'
+        command =
+          'Analyze the footage and suggest 2-3 color grading looks (e.g., Cinematic Teal-Orange, Warm Glow, Noir). Tell me how each affects the mood and ask which to apply.'
         break
       default:
-        command = `I want to apply ${feature.label.toLowerCase()} - please ask me for options`
+        command = `I want to apply ${feature.label.toLowerCase()} to my video. Can you guide me through the best options?`
     }
     
     // Populate input field so user can edit and specify details

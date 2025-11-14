@@ -11,6 +11,18 @@ const nextConfig = {
   },
   // Webpack config to include FFmpeg binary in serverless functions
   webpack: (config, { isServer, webpack }) => {
+    // Handle client-side FFmpeg.wasm packages
+    if (!isServer) {
+      // Don't externalize @ffmpeg packages on client side
+      config.resolve = config.resolve || {}
+      config.resolve.fallback = {
+        ...config.resolve.fallback,
+        fs: false,
+        path: false,
+        crypto: false,
+      }
+    }
+    
     if (isServer) {
       // Ensure ffmpeg-static is not externalized - we need it in the bundle
       // Vercel serverless functions need the binary accessible

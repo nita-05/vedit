@@ -788,8 +788,8 @@ const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
         </button>
       </header>
 
-      {/* Main Grid - Adjusted for fixed navbar */}
-      <div className="relative z-10 grid grid-cols-1 lg:grid-cols-[380px_1fr_380px] gap-6 h-[calc(100vh-120px)] p-6 pt-24">
+      {/* Main Grid - Adjusted for fixed navbar - Responsive */}
+      <div className="relative z-10 grid grid-cols-1 lg:grid-cols-[380px_1fr_380px] gap-4 sm:gap-6 h-[calc(100vh-120px)] p-3 sm:p-6 pt-20 sm:pt-24">
         
         {/* Loading Indicators */}
         {isSaving && (
@@ -880,12 +880,15 @@ const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
                         src={item.url}
                         className="w-full h-24 object-cover"
                         muted
+                        preload="metadata"
                       />
                     ) : (
                       <img
                         src={item.url}
                         alt={item.name}
                         className="w-full h-24 object-cover"
+                        loading="lazy"
+                        decoding="async"
                       />
                     )}
                     <div className="absolute bottom-0 left-0 right-0 bg-black/70 p-1">
@@ -1251,6 +1254,8 @@ const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
                       })()}
                       alt={selectedMedia.name}
                       className="w-full h-auto rounded-xl"
+                      loading="lazy"
+                      decoding="async"
                       onError={(e) => {
                         console.error('🖼️ Image load error:', selectedMedia.url)
                         setImageError(true)
