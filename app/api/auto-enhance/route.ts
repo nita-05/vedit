@@ -3,6 +3,10 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { v2 as cloudinary } from 'cloudinary'
 import OpenAI from 'openai'
+import fs from 'fs'
+import path from 'path'
+import os from 'os'
+import ffmpeg from 'fluent-ffmpeg'
 
 // Configure Cloudinary - use server-side env vars (without NEXT_PUBLIC_)
 cloudinary.config({
@@ -14,6 +18,15 @@ cloudinary.config({
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
+
+// Helper function to get writable temp directory (works on Vercel and local)
+function getTempDir(): string {
+  // On Vercel, use /tmp which is writable
+  if (process.env.VERCEL) {
+    return '/tmp'
+  }
+  return process.env.TMPDIR || process.env.TEMP || os.tmpdir()
+}
 
 /**
  * Smart Auto-Enhance API
@@ -62,11 +75,61 @@ export async function POST(request: NextRequest) {
       resource_type: 'video',
     })
 
-    const duration = resource.duration || 0
+    const mediaUrl = resource.secure_url
+    let duration = resource.duration || 0
     const width = resource.width || 1920
     const height = resource.height || 1080
     const size = resource.bytes || 0
     const format = resource.format || 'mp4'
+
+    // If duration is 0 or missing, try to get it from video metadata
+    if (!duration || duration === 0) {
+      try {
+        // Try to get duration from video_info if available
+        if (resource.video && resource.video.duration) {
+          duration = resource.video.duration
+          console.log(`✅ Got duration from video_info: ${duration}s`)
+        } else if (resource.context && resource.context.custom && resource.context.custom.duration) {
+          duration = parseFloat(resource.context.custom.duration)
+          console.log(`✅ Got duration from context: ${duration}s`)
+        } else {
+          // Fallback: Try to fetch video and get duration using FFprobe
+          console.log('📥 Fetching video to detect duration...')
+          const videoResponse = await fetch(mediaUrl)
+          if (videoResponse.ok) {
+            const tempDir = getTempDir()
+            if (!fs.existsSync(tempDir)) {
+              fs.mkdirSync(tempDir, { recursive: true })
+            }
+            const tempFilePath = path.join(tempDir, `duration_check_${Date.now()}.mp4`)
+            const arrayBuffer = await videoResponse.arrayBuffer()
+            fs.writeFileSync(tempFilePath, Buffer.from(arrayBuffer))
+            
+            // Use FFprobe to get duration
+            await new Promise<void>((resolve, reject) => {
+              ffmpeg.ffprobe(tempFilePath, (err: any, metadata: any) => {
+                if (!err && metadata && metadata.format && metadata.format.duration) {
+                  duration = Math.round(metadata.format.duration * 10) / 10 // Round to 1 decimal
+                  console.log(`✅ Detected video duration: ${duration}s`)
+                } else {
+                  console.warn('⚠️ Could not detect video duration, using default')
+                }
+                // Cleanup
+                try {
+                  if (fs.existsSync(tempFilePath)) {
+                    fs.unlinkSync(tempFilePath)
+                  }
+                } catch {}
+                resolve()
+              })
+            })
+          }
+        }
+      } catch (durationError) {
+        console.warn('⚠️ Could not detect video duration:', durationError)
+        // Keep duration as 0 if detection fails
+      }
+    }
 
     console.log(`📊 Video metadata: ${duration}s, ${width}x${height}, ${(size / 1024 / 1024).toFixed(2)}MB`)
 
@@ -82,17 +145,19 @@ export async function POST(request: NextRequest) {
     const isHighBitrate = parseFloat(bitrateEstimate) > 10 // High quality video
 
     // Use AI to analyze video content and suggest ONLY what's actually needed
-    const analysisPrompt = `You are a professional video editor analyzing this video. Analyze the metadata and suggest ONLY the enhancements that are ACTUALLY NEEDED based on the video characteristics.
+    const analysisPrompt = `You are a professional video editor analyzing this video. Analyze the ACTUAL metadata and suggest ONLY the enhancements that are ACTUALLY NEEDED based on the REAL video characteristics. DO NOT make assumptions - use the exact values provided.
 
-VIDEO METADATA:
-- Duration: ${duration} seconds
-- Resolution: ${width}x${height} ${isLowResolution ? '(LOW - may need upscaling/noise reduction)' : isHighResolution ? '(HIGH - good quality)' : '(MEDIUM)'}
+VIDEO METADATA (EXACT VALUES):
+- Duration: ${duration} seconds ${duration === 0 ? '(⚠️ Duration not detected - analyze based on other factors)' : duration < 5 ? '(VERY SHORT)' : duration < 15 ? '(SHORT)' : duration < 60 ? '(MEDIUM)' : duration < 300 ? '(LONG)' : '(VERY LONG)'}
+- Resolution: ${width}x${height} ${isLowResolution ? '(LOW RESOLUTION - may need noise reduction)' : isHighResolution ? '(HIGH RESOLUTION - good quality)' : '(MEDIUM RESOLUTION)'}
 - Format: ${format}
 - File Size: ${sizeMB}MB
-- Estimated Bitrate: ${bitrateEstimate} Mbps ${isLowBitrate ? '(LOW - may have compression artifacts/noise)' : isHighBitrate ? '(HIGH - good quality)' : '(MEDIUM)'}
-- Video Length: ${isShortVideo ? 'SHORT' : isLongVideo ? 'LONG' : 'MEDIUM'}
+- Estimated Bitrate: ${bitrateEstimate} Mbps ${isLowBitrate ? '(LOW BITRATE - likely compression artifacts/noise)' : isHighBitrate ? '(HIGH BITRATE - good quality)' : '(MEDIUM BITRATE)'}
+- Video Length Category: ${isShortVideo ? 'SHORT (< 10s)' : isLongVideo ? 'LONG (> 60s)' : isVeryLongVideo ? 'VERY LONG (> 5min)' : 'MEDIUM (10-60s)'}
 
-YOUR TASK: Analyze these characteristics and suggest ONLY what the video ACTUALLY NEEDS:
+CRITICAL: Use the EXACT duration value (${duration}s). If duration is 0, you MUST still analyze based on resolution, bitrate, and file size - but DO NOT suggest text overlays or transitions that require knowing video length.
+
+YOUR TASK: Analyze these EXACT characteristics and suggest ONLY what the video ACTUALLY NEEDS based on REAL data:
 
 1. NOISE REDUCTION: Suggest if:
    - Low bitrate (< 2 Mbps) - likely compression artifacts
@@ -111,12 +176,14 @@ YOUR TASK: Analyze these characteristics and suggest ONLY what the video ACTUALL
    - Long videos: "cinematic", "moody" (professional)
 
 4. TRANSITIONS: Suggest ONLY if:
-   - Video is long (> 30 seconds) - likely has multiple scenes
+   - Video is long (> 30 seconds) AND duration is known (> 0) - likely has multiple scenes
    - Suggest "Fade" or "Cross Dissolve" for smooth transitions
+   - DO NOT suggest if duration is 0 or unknown
 
 5. TEXT OVERLAY: Suggest ONLY if:
-   - Video is short (< 15 seconds) - likely needs title/intro
-   - Video is very long (> 2 minutes) - may need chapter markers
+   - Video is short (< 15 seconds) AND duration is known (> 0) - likely needs title/intro
+   - Video is very long (> 2 minutes) AND duration is known (> 0) - may need chapter markers
+   - DO NOT suggest if duration is 0 or unknown
 
 6. EFFECTS: Suggest ONLY if:
    - Video needs specific mood (e.g., "dreamy glow" for romantic content)
@@ -124,13 +191,15 @@ YOUR TASK: Analyze these characteristics and suggest ONLY what the video ACTUALL
    - Max 1-2 subtle effects
 
 7. MUSIC: Suggest ONLY if:
-   - Video is > 10 seconds
+   - Video is > 10 seconds AND duration is known (> 0)
    - Video likely lacks audio or needs atmosphere
    - Match mood to video length and type
+   - DO NOT suggest if duration is 0 or unknown
 
 8. SPEED ADJUSTMENT: Suggest ONLY if:
-   - Video is very short (< 5 seconds) - might need slow motion
-   - Video is very long (> 5 minutes) - might need speed up
+   - Video is very short (< 5 seconds) AND duration is known (> 0) - might need slow motion
+   - Video is very long (> 5 minutes) AND duration is known (> 0) - might need speed up
+   - DO NOT suggest if duration is 0 or unknown
 
 Return JSON format:
 {
@@ -165,11 +234,13 @@ AVAILABLE PRESETS:
 
 IMPORTANT RULES:
 - Suggest noise reduction if bitrate < 2 Mbps OR resolution < 1280x720
-- Suggest saturation increase if video seems compressed/dull
-- Always suggest ONE color grade (choose based on video quality and length)
-- Suggest transitions only if video is > 30 seconds
-- Suggest text only if video is < 15 seconds OR > 2 minutes
-- Keep it minimal - only suggest what's ACTUALLY needed`
+- Suggest saturation increase if video seems compressed/dull (low bitrate or small file size for duration)
+- Always suggest ONE color grade (choose based on video quality and length IF duration is known)
+- Suggest transitions only if video is > 30 seconds AND duration is known (> 0)
+- Suggest text only if video is < 15 seconds OR > 2 minutes AND duration is known (> 0)
+- Suggest music only if video is > 10 seconds AND duration is known (> 0)
+- If duration is 0 or unknown, focus on: color grade, noise reduction (if needed), saturation (if needed) - skip time-based features
+- Keep it minimal - only suggest what's ACTUALLY needed based on REAL metadata`
 
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
@@ -250,24 +321,24 @@ IMPORTANT RULES:
       })
     }
 
-    // 5. Music (if video is long enough)
-    if (suggestions.music && duration > 10) {
+    // 5. Music (if video is long enough AND duration is known)
+    if (suggestions.music && duration > 10 && duration > 0) {
       operations.push({
         operation: 'addMusic',
         params: { preset: suggestions.music },
       })
     }
 
-    // 6. Transitions (only if video is long or has multiple scenes)
-    if (suggestions.transitions && Array.isArray(suggestions.transitions) && suggestions.transitions.length > 0 && duration > 30) {
+    // 6. Transitions (only if video is long or has multiple scenes AND duration is known)
+    if (suggestions.transitions && Array.isArray(suggestions.transitions) && suggestions.transitions.length > 0 && duration > 30 && duration > 0) {
       operations.push({
         operation: 'addTransition',
         params: { preset: suggestions.transitions[0] },
       })
     }
 
-    // 7. Text overlay (only if needed)
-    if (suggestions.text && suggestions.text.needed) {
+    // 7. Text overlay (only if needed AND duration is known)
+    if (suggestions.text && suggestions.text.needed && duration > 0) {
       operations.push({
         operation: 'addText',
         params: {
@@ -278,8 +349,8 @@ IMPORTANT RULES:
       })
     }
 
-    // 8. Speed adjustment (only if clearly needed)
-    if (suggestions.speed && suggestions.speed !== 1.0) {
+    // 8. Speed adjustment (only if clearly needed AND duration is known)
+    if (suggestions.speed && suggestions.speed !== 1.0 && duration > 0) {
       operations.push({
         operation: 'adjustSpeed',
         params: { speed: suggestions.speed },
@@ -309,10 +380,10 @@ IMPORTANT RULES:
       }
     }
     if (suggestions.effects?.length) suggestionsSummary.effects = suggestions.effects
-    if (suggestions.music && duration > 10) suggestionsSummary.music = suggestions.music
-    if (suggestions.transitions?.length && duration > 30) suggestionsSummary.transitions = suggestions.transitions
-    if (suggestions.text?.needed) suggestionsSummary.text = suggestions.text
-    if (suggestions.speed && suggestions.speed !== 1.0) suggestionsSummary.speed = suggestions.speed
+    if (suggestions.music && duration > 10 && duration > 0) suggestionsSummary.music = suggestions.music
+    if (suggestions.transitions?.length && duration > 30 && duration > 0) suggestionsSummary.transitions = suggestions.transitions
+    if (suggestions.text?.needed && duration > 0) suggestionsSummary.text = suggestions.text
+    if (suggestions.speed && suggestions.speed !== 1.0 && duration > 0) suggestionsSummary.speed = suggestions.speed
 
     return NextResponse.json({
       success: true,
