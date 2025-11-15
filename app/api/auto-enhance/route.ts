@@ -155,30 +155,40 @@ export async function POST(request: NextRequest) {
 
     // REAL AI CONTENT ANALYSIS: Extract frames and analyze actual video content
     let videoContentAnalysis = ''
+    let contentAnalysisSuccess = false
+    
     try {
-      console.log('🎬 Extracting video frames for content analysis...')
+      console.log('🎬 Starting REAL video content analysis (extracting frames)...')
       const tempDir = getTempDir()
       if (!fs.existsSync(tempDir)) {
         fs.mkdirSync(tempDir, { recursive: true })
       }
       
       // Download video temporarily
+      console.log('📥 Downloading video for frame extraction...')
       const videoResponse = await fetch(mediaUrl)
-      if (videoResponse.ok) {
-        const tempVideoPath = path.join(tempDir, `analyze_${Date.now()}.mp4`)
-        const arrayBuffer = await videoResponse.arrayBuffer()
-        fs.writeFileSync(tempVideoPath, Buffer.from(arrayBuffer))
-        
-        // Extract 3 frames (start, middle, end) for analysis
-        const framePaths: string[] = []
-        const frameTimes = duration > 0 
-          ? [Math.max(0, duration * 0.1), Math.max(0, duration * 0.5), Math.max(0, duration * 0.9)]
-          : [0, 0, 0]
-        
-        for (let i = 0; i < 3 && duration > 0; i++) {
-          const framePath = path.join(tempDir, `frame_${i}_${Date.now()}.jpg`)
+      if (!videoResponse.ok) {
+        throw new Error(`Failed to download video: ${videoResponse.status}`)
+      }
+      
+      const tempVideoPath = path.join(tempDir, `analyze_${Date.now()}.mp4`)
+      const arrayBuffer = await videoResponse.arrayBuffer()
+      fs.writeFileSync(tempVideoPath, Buffer.from(arrayBuffer))
+      console.log('✅ Video downloaded, extracting frames...')
+      
+      // Extract 3 frames (start, middle, end) for analysis
+      const framePaths: string[] = []
+      const frameTimes = duration > 0 
+        ? [Math.max(0, duration * 0.1), Math.max(0, duration * 0.5), Math.max(0, duration * 0.9)]
+        : [0.5, 1, 1.5] // Fallback times if duration unknown
+      
+      console.log(`📸 Extracting frames at: ${frameTimes.join(', ')}s`)
+      
+      for (let i = 0; i < 3; i++) {
+        const framePath = path.join(tempDir, `frame_${i}_${Date.now()}.jpg`)
+        try {
           await new Promise<void>((resolve, reject) => {
-            ffmpeg(tempVideoPath)
+            const ffmpegProcess = ffmpeg(tempVideoPath)
               .screenshots({
                 timestamps: [frameTimes[i]],
                 filename: path.basename(framePath),
@@ -188,92 +198,125 @@ export async function POST(request: NextRequest) {
               .on('end', () => {
                 if (fs.existsSync(framePath)) {
                   framePaths.push(framePath)
+                  console.log(`✅ Frame ${i + 1} extracted: ${framePath}`)
+                } else {
+                  console.warn(`⚠️ Frame ${i + 1} file not created`)
                 }
                 resolve()
               })
               .on('error', (err) => {
-                console.warn(`⚠️ Could not extract frame ${i}:`, err)
-                resolve() // Continue even if frame extraction fails
+                console.error(`❌ Frame ${i + 1} extraction error:`, err)
+                reject(err)
               })
           })
+        } catch (frameError) {
+          console.error(`❌ Failed to extract frame ${i + 1}:`, frameError)
+          // Continue with other frames
         }
-        
-        // Analyze frames with OpenAI Vision API
-        if (framePaths.length > 0) {
-          console.log(`📸 Analyzing ${framePaths.length} video frames for content...`)
-          const frameImages = framePaths.map(framePath => {
-            const imageBuffer = fs.readFileSync(framePath)
-            return {
-              type: 'image_url',
-              image_url: {
-                url: `data:image/jpeg;base64,${imageBuffer.toString('base64')}`
-              }
-            }
-          })
-          
-          // Build content array with proper types for Vision API
-          const contentParts: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [
-            {
-              type: 'text',
-              text: `Analyze these ${framePaths.length} frames extracted from a video (start, middle, end). Describe:
-1. Visual content (what's in the video - people, objects, scenes, activities)
-2. Color palette (bright, dark, muted, vibrant, warm, cool)
-3. Lighting conditions (bright, dim, natural, artificial, contrast)
-4. Overall mood/atmosphere (professional, casual, dramatic, fun, serious)
-5. Quality issues visible (noise, blur, compression artifacts, overexposure, underexposure)
-6. What enhancements would actually improve THIS specific video content
-
-Be specific and detailed. This analysis will determine which enhancements to suggest.`
-            },
-            ...frameImages.map(img => ({
-              type: 'image_url' as const,
-              image_url: img.image_url
-            }))
-          ]
-          
-          const visionResponse = await openai.chat.completions.create({
-            model: 'gpt-4o',
-            messages: [
-              {
-                role: 'system',
-                content: 'You are a professional video editor analyzing video frames. Analyze the actual visual content, colors, lighting, composition, and mood. Be specific about what you see.'
-              },
-              {
-                role: 'user',
-                content: contentParts
-              }
-            ],
-            max_tokens: 500
-          })
-          
-          videoContentAnalysis = visionResponse.choices[0]?.message?.content || ''
-          console.log('✅ Video content analysis:', videoContentAnalysis.substring(0, 200) + '...')
-          
-          // Cleanup frames
-          framePaths.forEach(framePath => {
-            try {
-              if (fs.existsSync(framePath)) fs.unlinkSync(framePath)
-            } catch {}
-          })
-        }
-        
-        // Cleanup video
-        try {
-          if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath)
-        } catch {}
       }
-    } catch (contentAnalysisError) {
-      console.warn('⚠️ Video content analysis failed, using metadata only:', contentAnalysisError)
-      // Continue with metadata-only analysis
+      
+      if (framePaths.length === 0) {
+        throw new Error('No frames extracted - cannot perform content analysis')
+      }
+      
+      console.log(`✅ Successfully extracted ${framePaths.length} frames for analysis`)
+        
+      // Analyze frames with OpenAI Vision API
+      console.log(`📸 Analyzing ${framePaths.length} video frames with OpenAI Vision API...`)
+      const frameImages = framePaths.map(framePath => {
+        const imageBuffer = fs.readFileSync(framePath)
+        const base64Image = imageBuffer.toString('base64')
+        return {
+          type: 'image_url' as const,
+          image_url: {
+            url: `data:image/jpeg;base64,${base64Image}`
+          }
+        }
+      })
+      
+      // Build content array with proper types for Vision API
+      const contentParts: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [
+        {
+          type: 'text',
+          text: `Analyze these ${framePaths.length} frames extracted from a video (start, middle, end). You MUST analyze the ACTUAL visual content you see in these frames.
+
+CRITICAL: Be VERY SPECIFIC about what you actually see:
+1. Visual content: What's actually in the video? (people, objects, scenes, activities, environment)
+2. Color palette: What colors do you actually see? (bright, dark, muted, vibrant, warm, cool, specific colors)
+3. Lighting: What lighting conditions? (bright, dim, natural, artificial, high contrast, low contrast)
+4. Mood/atmosphere: What feeling does the video give? (professional, casual, dramatic, fun, serious, romantic, energetic)
+5. Quality issues: What problems do you see? (noise, grain, blur, compression artifacts, overexposure, underexposure, color issues)
+6. Specific enhancements: What would ACTUALLY improve THIS specific video based on what you see?
+
+IMPORTANT: Base your analysis ONLY on what you see in these frames. Be detailed and specific. This will determine unique enhancements for THIS video.`
+        },
+        ...frameImages
+      ]
+      
+      console.log('🤖 Calling OpenAI Vision API (GPT-4o) for content analysis...')
+      const visionResponse = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          {
+            role: 'system',
+            content: 'You are a professional video editor analyzing video frames. You MUST analyze the ACTUAL visual content you see. Be specific, detailed, and accurate. Base your analysis ONLY on what is visible in the frames provided.'
+          },
+          {
+            role: 'user',
+            content: contentParts
+          }
+        ],
+        max_tokens: 600,
+        temperature: 0.3 // Lower temperature for more accurate analysis
+      })
+      
+      videoContentAnalysis = visionResponse.choices[0]?.message?.content || ''
+      
+      if (!videoContentAnalysis || videoContentAnalysis.length < 50) {
+        throw new Error('Vision API returned empty or insufficient analysis')
+      }
+      
+      contentAnalysisSuccess = true
+      console.log('✅ REAL video content analysis completed!')
+      console.log('📊 Analysis preview:', videoContentAnalysis.substring(0, 300) + '...')
+      
+      // Cleanup frames
+      framePaths.forEach(framePath => {
+        try {
+          if (fs.existsSync(framePath)) fs.unlinkSync(framePath)
+        } catch {}
+      })
+      
+      // Cleanup video
+      try {
+        if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath)
+      } catch {}
+      
+    } catch (contentAnalysisError: any) {
+      console.error('❌ REAL video content analysis FAILED:', contentAnalysisError?.message || contentAnalysisError)
+      console.error('❌ Stack:', contentAnalysisError?.stack)
+      // DO NOT continue - throw error to prevent fallback
+      throw new Error(`Video content analysis failed: ${contentAnalysisError?.message || 'Unknown error'}. Cannot provide accurate suggestions without analyzing actual video content.`)
+    }
+    
+    // CRITICAL: Ensure we have content analysis before proceeding
+    if (!contentAnalysisSuccess || !videoContentAnalysis) {
+      throw new Error('Video content analysis is required but was not completed successfully')
     }
 
     // Use AI to analyze video content and suggest ONLY what's actually needed
-    const analysisPrompt = `You are a professional video editor analyzing this video. You have BOTH metadata AND actual video content analysis. Use BOTH to suggest ONLY the enhancements that are ACTUALLY NEEDED for THIS SPECIFIC VIDEO. DO NOT give generic suggestions - be specific to this video's content.
+    const analysisPrompt = `You are a professional video editor analyzing this video. You have BOTH metadata AND actual video content analysis from OpenAI Vision API. 
 
-${videoContentAnalysis ? `🎬 ACTUAL VIDEO CONTENT ANALYSIS:
+🎬 ACTUAL VIDEO CONTENT ANALYSIS (from Vision API):
 ${videoContentAnalysis}
 
-CRITICAL: Use this content analysis to suggest enhancements that match the ACTUAL video content, not generic suggestions.` : '⚠️ Content analysis unavailable - using metadata only.'}
+CRITICAL RULES:
+1. You MUST use the content analysis above to make suggestions - it describes what's ACTUALLY in the video
+2. DO NOT give generic suggestions - be SPECIFIC to this video's actual content
+3. Different videos with different content MUST get DIFFERENT suggestions
+4. If the content analysis says "bright colors" → suggest different enhancements than if it says "dark moody"
+5. If the content analysis says "professional/business" → suggest different enhancements than if it says "casual/fun"
+6. Base EVERY suggestion on what the Vision API actually saw in the video frames
 
 VIDEO METADATA (EXACT VALUES):
 - Duration: ${duration} seconds ${duration === 0 ? '(⚠️ Duration not detected - analyze based on other factors)' : duration < 5 ? '(VERY SHORT)' : duration < 15 ? '(SHORT)' : duration < 60 ? '(MEDIUM)' : duration < 300 ? '(LONG)' : '(VERY LONG)'}
