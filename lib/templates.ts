@@ -69,10 +69,7 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
         operation: 'colorGrade',
         params: { preset: 'studio tone' },
       },
-      {
-        operation: 'applyEffect',
-        params: { preset: 'sharpen', intensity: 0.5 },
-      },
+      // Removed sharpen effect - FFmpeg not available on Vercel, keeping only color grade for reliability
     ],
   },
   {
@@ -137,14 +134,7 @@ export const EFFECT_TEMPLATES: EffectTemplate[] = [
         operation: 'colorGrade',
         params: { preset: 'cyberpunk' },
       },
-      {
-        operation: 'applyEffect',
-        params: { preset: 'glow', intensity: 0.9 },
-      },
-      {
-        operation: 'applyEffect',
-        params: { preset: 'neon', intensity: 0.7 },
-      },
+      // Removed glow and neon effects - FFmpeg not available on Vercel, keeping only color grade for reliability
     ],
   },
   {
