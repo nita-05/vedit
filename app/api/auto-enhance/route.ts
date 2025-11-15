@@ -130,37 +130,9 @@ export async function POST(request: NextRequest) {
           duration = parseFloat(resource.context.custom.duration)
           console.log(`✅ Got duration from context: ${duration}s`)
         } else {
-          // Fallback: Try to fetch video and get duration using FFprobe
-          console.log('📥 Fetching video to detect duration...')
-          const videoResponse = await fetch(mediaUrl)
-          if (videoResponse.ok) {
-            const tempDir = getTempDir()
-            if (!fs.existsSync(tempDir)) {
-              fs.mkdirSync(tempDir, { recursive: true })
-            }
-            const tempFilePath = path.join(tempDir, `duration_check_${Date.now()}.mp4`)
-            const arrayBuffer = await videoResponse.arrayBuffer()
-            fs.writeFileSync(tempFilePath, Buffer.from(arrayBuffer))
-            
-            // Use FFprobe to get duration
-            await new Promise<void>((resolve, reject) => {
-              ffmpeg.ffprobe(tempFilePath, (err: any, metadata: any) => {
-                if (!err && metadata && metadata.format && metadata.format.duration) {
-                  duration = Math.round(metadata.format.duration * 10) / 10 // Round to 1 decimal
-                  console.log(`✅ Detected video duration: ${duration}s`)
-                } else {
-                  console.warn('⚠️ Could not detect video duration, using default')
-                }
-                // Cleanup
-                try {
-                  if (fs.existsSync(tempFilePath)) {
-                    fs.unlinkSync(tempFilePath)
-                  }
-                } catch {}
-                resolve()
-              })
-            })
-          }
+          // Note: FFprobe fallback removed - using client-side duration or Cloudinary API duration only
+          // If duration is still 0, we'll use the client-side duration passed from frontend
+          console.warn('⚠️ Duration not found in Cloudinary metadata - using client-side duration if provided')
         }
       } catch (durationError) {
         console.warn('⚠️ Could not detect video duration:', durationError)
