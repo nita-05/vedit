@@ -892,8 +892,16 @@ export async function POST(request: NextRequest) {
     } else if (instruction.operation === 'combineFeatures') {
       console.log('🔗 Starting combined features processing...')
       try {
-        processedUrl = await processCombinedFeatures(videoPublicId, instruction.params, inputVideoUrl)
+        const result = await processCombinedFeatures(videoPublicId, instruction.params, inputVideoUrl)
+        processedUrl = result.url
         console.log('✅ Combined features applied successfully:', processedUrl)
+        
+        // Update message based on success count
+        if (result.processedCount < result.totalCount) {
+          instruction.message = `${result.processedCount} of ${result.totalCount} effect${result.processedCount === 1 ? '' : 's'} applied successfully. ${result.totalCount - result.processedCount} effect${result.totalCount - result.processedCount === 1 ? ' was' : 's were'} skipped due to processing limitations.`
+        } else {
+          instruction.message = `All ${result.totalCount} effect${result.totalCount === 1 ? '' : 's'} applied successfully!`
+        }
       } catch (combineError) {
         console.error('❌ combineFeatures error caught in main handler:', combineError)
         // Re-throw to be caught by outer catch - this ensures proper error handling
@@ -2752,7 +2760,7 @@ async function generateAIVideo(params: any): Promise<string> {
   }
 }
 
-async function processCombinedFeatures(publicId: string, params: any, inputVideoUrl?: string): Promise<string> {
+async function processCombinedFeatures(publicId: string, params: any, inputVideoUrl?: string): Promise<{ url: string; processedCount: number; totalCount: number }> {
   try {
     console.log(`🔗 Processing ${params.features?.length || 0} features in batch mode (faster!)`)
     const { features } = params
@@ -2955,7 +2963,7 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
             if (renderData.success && renderData.videoUrl) {
               console.log(`✅ Batch processed via Render API: ${renderData.videoUrl}`)
               batchSucceeded = true
-              return renderData.videoUrl
+              return { url: renderData.videoUrl, processedCount: features.length, totalCount: features.length }
             } else {
               console.error(`❌ Render API batch returned unsuccessful:`, renderData)
               batchError = new Error(renderData.message || renderData.error || 'Render API batch processing failed')
@@ -3034,7 +3042,7 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
         console.warn(`⚠️ Sequential processing: Only ${processedCount}/${features.length} features succeeded, but returning success (partial success is acceptable)`)
       }
       console.log(`✅ Sequential processing completed successfully! Processed ${processedCount}/${features.length} features`)
-      return currentUrl
+      return { url: currentUrl, processedCount, totalCount: features.length }
     } catch (sequentialError) {
       console.error('❌ Sequential processing failed:', sequentialError)
       
@@ -3042,7 +3050,7 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
       // If we did, return the last successful URL instead of throwing
       if (currentUrl && currentUrl !== initialUrl && processedCount > 0) {
         console.warn(`⚠️ Sequential processing had errors, but ${processedCount} feature(s) succeeded. Returning partial success.`)
-        return currentUrl
+        return { url: currentUrl, processedCount, totalCount: features.length }
       }
       
       // Only throw if we have NO successful features
