@@ -2905,6 +2905,7 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
     }
     
     // OPTIMIZATION: If Render API is available, send all features in one request for faster processing
+    let batchError: Error | null = null
     if (RENDER_API_URL) {
       console.log('⚡ Using Render API for batch processing (all features in one call)')
       try {
@@ -2936,7 +2937,8 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
         if (!renderResponse.ok) {
           const errorText = await renderResponse.text()
           console.error(`❌ Render API batch error: ${errorText}`)
-          throw new Error(`Render API error (${renderResponse.status}): ${renderResponse.statusText}`)
+          batchError = new Error(`Render API error (${renderResponse.status}): ${renderResponse.statusText}`)
+          throw batchError
         }
         
         const renderData = await renderResponse.json()
@@ -2946,12 +2948,14 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
           console.log(`✅ Batch processed via Render API: ${renderData.videoUrl}`)
           return renderData.videoUrl
         } else {
-          throw new Error(renderData.message || renderData.error || 'Render API batch processing failed')
+          batchError = new Error(renderData.message || renderData.error || 'Render API batch processing failed')
+          throw batchError
         }
       } catch (error) {
         const renderError = error as any
         console.error('❌ Render API batch failed:', renderError.message || renderError)
         console.log('🔄 Falling back to sequential processing...')
+        batchError = renderError instanceof Error ? renderError : new Error(String(renderError))
         // Fall through to sequential processing
       }
     }
@@ -2962,24 +2966,28 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
       throw new Error('Current URL is not defined for sequential processing')
     }
     
-    for (const feature of features) {
-      const instruction = {
-        operation: feature.type,
-        params: feature,
+    try {
+      for (const feature of features) {
+        const instruction = {
+          operation: feature.type,
+          params: feature,
+        }
+        const processedUrl = await videoProcessor.process(currentUrl, instruction)
+        if (!processedUrl) {
+          throw new Error(`Failed to process feature: ${feature.type}`)
+        }
+        currentUrl = processedUrl
       }
-      const processedUrl = await videoProcessor.process(currentUrl, instruction)
-      if (!processedUrl) {
-        throw new Error(`Failed to process feature: ${feature.type}`)
-      }
-      currentUrl = processedUrl
+      
+      return currentUrl
+    } catch (sequentialError) {
+      console.error('❌ Sequential processing also failed:', sequentialError)
+      // If sequential processing fails, re-throw the batch error if available, otherwise the sequential error
+      throw batchError || sequentialError
     }
-    
-    return currentUrl
   } catch (error) {
     console.error('❌ Combined features error:', error)
-    const resource = await cloudinary.api.resource(publicId, {
-      resource_type: 'video',
-    })
-    return resource.secure_url || ''
+    // Re-throw to let caller handle - don't return original URL
+    throw error
   }
 }
