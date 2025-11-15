@@ -1930,6 +1930,17 @@ export class VideoProcessor {
         return this.applyTimeBasedFilter(command, 'lenscorrection=k1=0.5', startTime, endTime)
       case 'bloom':
         return this.applyTimeBasedFilter(command, 'boxblur=8:3,eq=brightness=0.1', startTime, endTime)
+      case 'sharpen':
+        // Sharpen effect using unsharp filter
+        const sharpenAmount = intensity || 0.5
+        const sharpenValue = Math.round(5 + sharpenAmount * 5) // Range: 5-10
+        return this.applyTimeBasedFilter(command, `unsharp=${sharpenValue}:${sharpenValue}:1.0:${sharpenValue}:${sharpenValue}:0.0`, startTime, endTime)
+      case 'neon':
+        // Neon effect - high contrast and saturation with brightness boost
+        const neonIntensity = intensity || 0.7
+        const contrast = 1.3 + neonIntensity * 0.3 // Range: 1.3-1.6
+        const saturation = 1.6 + neonIntensity * 0.4 // Range: 1.6-2.0
+        return this.applyTimeBasedFilter(command, `eq=contrast=${contrast}:saturation=${saturation}:brightness=0.1`, startTime, endTime)
       default:
         console.warn(`⚠️ Unknown effect preset: ${preset}, applying default`)
         return command
