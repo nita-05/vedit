@@ -2990,9 +2990,11 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
       throw new Error('Current URL is not defined for sequential processing')
     }
     
+    // Track success outside try block so it's accessible in catch
+    let processedCount = 0
+    const initialUrl = currentUrl
+    
     try {
-      let processedCount = 0
-      const initialUrl = currentUrl
       
       for (const feature of features) {
         const instruction = {
@@ -3027,13 +3029,25 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
         throw new Error('Sequential processing did not produce a valid processed URL')
       }
       
+      // SUCCESS: At least one feature was processed successfully
+      if (processedCount < features.length) {
+        console.warn(`⚠️ Sequential processing: Only ${processedCount}/${features.length} features succeeded, but returning success (partial success is acceptable)`)
+      }
       console.log(`✅ Sequential processing completed successfully! Processed ${processedCount}/${features.length} features`)
       return currentUrl
     } catch (sequentialError) {
       console.error('❌ Sequential processing failed:', sequentialError)
-      // If sequential processing fails, re-throw the batch error if available, otherwise the sequential error
+      
+      // Check if we got any partial success before the error
+      // If we did, return the last successful URL instead of throwing
+      if (currentUrl && currentUrl !== initialUrl && processedCount > 0) {
+        console.warn(`⚠️ Sequential processing had errors, but ${processedCount} feature(s) succeeded. Returning partial success.`)
+        return currentUrl
+      }
+      
+      // Only throw if we have NO successful features
       const finalError = batchError || sequentialError
-      console.error('❌ Both batch and sequential processing failed. Throwing error:', finalError)
+      console.error('❌ Both batch and sequential processing failed completely. Throwing error:', finalError)
       throw finalError
     }
   } catch (error) {
