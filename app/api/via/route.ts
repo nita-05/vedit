@@ -2954,9 +2954,9 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
       } catch (error) {
         const renderError = error as any
         console.error('❌ Render API batch failed:', renderError.message || renderError)
-        console.log('🔄 Falling back to sequential processing...')
+        console.log('🔄 Backend falling back to sequential processing...')
         batchError = renderError instanceof Error ? renderError : new Error(String(renderError))
-        // Fall through to sequential processing
+        // Fall through to sequential processing - don't throw, let sequential try
       }
     }
     
@@ -2972,13 +2972,16 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
           operation: feature.type,
           params: feature,
         }
+        console.log(`🔄 Sequential: Processing ${feature.type} (${feature.preset || 'default'})`)
         const processedUrl = await videoProcessor.process(currentUrl, instruction)
         if (!processedUrl) {
           throw new Error(`Failed to process feature: ${feature.type}`)
         }
         currentUrl = processedUrl
+        console.log(`✅ Sequential: ${feature.type} completed, new URL: ${processedUrl.substring(0, 80)}...`)
       }
       
+      console.log('✅ Sequential processing completed successfully!')
       return currentUrl
     } catch (sequentialError) {
       console.error('❌ Sequential processing also failed:', sequentialError)
@@ -2986,7 +2989,7 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
       throw batchError || sequentialError
     }
   } catch (error) {
-    console.error('❌ Combined features error:', error)
+    console.error('❌ Combined features error (outer catch):', error)
     // Re-throw to let caller handle - don't return original URL
     throw error
   }
