@@ -2866,18 +2866,36 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
           }
         }
         
-        // Generate single Cloudinary URL with all transformations combined
-        // Note: For video transformations, we use the transformation array format
-        const previewUrl = cloudinary.url(effectivePublicId, {
-          resource_type: 'video',
-          secure: true,
-          transformation: allTransformations.length > 0 ? allTransformations : undefined,
-        })
+        // Manually construct Cloudinary URL to avoid SDK adding unwanted /v1/ version
+        // Format: https://res.cloudinary.com/{cloud_name}/video/upload/{transformations}/{publicId}
+        const cloudName = process.env.CLOUDINARY_CLOUD_NAME || 'dcgfhjxco'
+        
+        // Build transformation string from array
+        // Each transformation becomes a URL segment like: e_art:zorro, b_10, c_20, etc.
+        const transformationParts: string[] = []
+        for (const trans of allTransformations) {
+          if (trans.effect) {
+            // Effect format: e_effect:value or e_effect:value:color
+            transformationParts.push(`e_${trans.effect}`)
+          }
+          if (trans.brightness !== undefined) {
+            transformationParts.push(`b_${trans.brightness}`)
+          }
+          if (trans.contrast !== undefined) {
+            transformationParts.push(`c_${trans.contrast}`)
+          }
+          if (trans.saturation !== undefined) {
+            transformationParts.push(`s_${trans.saturation}`)
+          }
+        }
+        
+        // Construct URL manually
+        const transformationString = transformationParts.length > 0 ? transformationParts.join('/') + '/' : ''
+        const baseUrl = `https://res.cloudinary.com/${cloudName}/video/upload/${transformationString}${effectivePublicId}`
         
         // Add cache-busting
-        const cleanUrl = previewUrl.split('?')[0]
         const timestamp = Date.now()
-        const finalUrl = `${cleanUrl}?_t=${timestamp}`
+        const finalUrl = `${baseUrl}?_t=${timestamp}`
         
         console.log('✅ Instant preview generated (0-2 seconds):', finalUrl.substring(0, 100))
         // Return instant preview - user can see results immediately
