@@ -2784,18 +2784,42 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
         if (currentUrl && currentUrl.includes('cloudinary.com')) {
           // Extract publicId from Cloudinary URL
           // Format: https://res.cloudinary.com/cloud_name/resource_type/upload/version/folder/publicId.ext
-          // Example: https://res.cloudinary.com/dcgfhjxco/video/upload/v1763211694/vedit/wo6sllgs2glfr7dxymvv.mp4
-          // We need to extract: vedit/wo6sllgs2glfr7dxymvv (with folder path)
-          const uploadIndex = currentUrl.indexOf('/upload/')
-          if (uploadIndex !== -1) {
-            const afterUpload = currentUrl.substring(uploadIndex + '/upload/'.length)
-            // Remove query parameters
-            const pathWithoutQuery = afterUpload.split('?')[0]
-            // Remove version prefix if present (v123456/)
-            const pathWithoutVersion = pathWithoutQuery.replace(/^v\d+\//, '')
-            // Remove file extension but keep folder path
-            effectivePublicId = pathWithoutVersion.replace(/\.[^.]+$/, '')
-            console.log('☁️ Extracted publicId from URL:', effectivePublicId)
+          // Example: https://res.cloudinary.com/dcgfhjxco/video/upload/v1763212326/vedit/nzjoe9n87fpyvlqp2osj.mp4
+          // We need to extract: vedit/nzjoe9n87fpyvlqp2osj (with folder path, without version)
+          try {
+            const uploadIndex = currentUrl.indexOf('/upload/')
+            if (uploadIndex !== -1) {
+              const afterUpload = currentUrl.substring(uploadIndex + '/upload/'.length)
+              // Remove query parameters
+              const pathWithoutQuery = afterUpload.split('?')[0]
+              
+              console.log('🔍 Debug - Path after /upload/:', pathWithoutQuery)
+              
+              // Split by '/' to get all path segments
+              const segments = pathWithoutQuery.split('/').filter(s => s.length > 0)
+              
+              console.log('🔍 Debug - Segments:', segments)
+              
+              // Find where the actual publicId starts (after version if present)
+              let startIndex = 0
+              if (segments.length > 0 && segments[0].match(/^v\d+$/)) {
+                // Skip version segment (v123456)
+                startIndex = 1
+                console.log('🔍 Debug - Found version segment, skipping:', segments[0])
+              }
+              
+              // Join remaining segments (folder + filename)
+              const publicIdPath = segments.slice(startIndex).join('/')
+              
+              console.log('🔍 Debug - PublicId path before extension removal:', publicIdPath)
+              
+              // Remove file extension but keep folder path
+              effectivePublicId = publicIdPath.replace(/\.[^.]+$/, '')
+              console.log('☁️ Extracted publicId from URL:', effectivePublicId)
+            }
+          } catch (error) {
+            console.warn('⚠️ Failed to extract publicId from URL, using provided:', error)
+            // Fall back to provided publicId
           }
         }
         
@@ -2843,12 +2867,11 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
         }
         
         // Generate single Cloudinary URL with all transformations combined
+        // Note: For video transformations, we use the transformation array format
         const previewUrl = cloudinary.url(effectivePublicId, {
           resource_type: 'video',
           secure: true,
-          transformation: allTransformations.length > 0 ? allTransformations : [],
-          fetch_format: 'auto',
-          quality: 'auto',
+          transformation: allTransformations.length > 0 ? allTransformations : undefined,
         })
         
         // Add cache-busting
