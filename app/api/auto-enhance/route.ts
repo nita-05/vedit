@@ -226,7 +226,7 @@ export async function POST(request: NextRequest) {
       const contentParts: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [
         {
           type: 'text',
-          text: `Analyze these ${framePaths.length} frames extracted from a video (start, middle, end). You MUST analyze the ACTUAL visual content you see in these frames.
+          text: `Analyze these ${frameBase64Images.length} frames extracted from a video (start, middle, end). You MUST analyze the ACTUAL visual content you see in these frames.
 
 CRITICAL: Be VERY SPECIFIC about what you actually see:
 1. Visual content: What's actually in the video? (people, objects, scenes, activities, environment)
@@ -290,10 +290,21 @@ IMPORTANT: Base your analysis ONLY on what you see in these frames. Be detailed 
     }
 
     // Use AI to analyze video content and suggest ONLY what's actually needed
-    const analysisPrompt = `You are a professional video editor analyzing this video. You have BOTH metadata AND actual video content analysis from OpenAI Vision API. 
+    const analysisPrompt = `You are a professional video editor analyzing this video. You have BOTH metadata AND actual video content analysis from OpenAI Vision API.
 
-🎬 ACTUAL VIDEO CONTENT ANALYSIS (from Vision API):
+🎬 ACTUAL VIDEO CONTENT ANALYSIS (from Vision API - THIS IS THE MOST IMPORTANT):
 ${videoContentAnalysis}
+
+🚨 CRITICAL: The content analysis above describes what's ACTUALLY in THIS SPECIFIC VIDEO. You MUST base ALL your suggestions on this analysis.
+
+⚠️ DO NOT IGNORE THE CONTENT ANALYSIS - IT IS THE PRIMARY SOURCE OF TRUTH
+
+RULES FOR DIFFERENT VIDEOS:
+1. If Video A has "bright sunny outdoor scene" → suggest "vibrant" or "golden hour" color grade
+2. If Video B has "dark moody indoor scene" → suggest "moody" or "cinematic" color grade  
+3. If Video C has "professional business meeting" → suggest "studio tone" or "natural tone" color grade
+4. If Video D has "fun casual party" → suggest "vibrant" or "bright punch" color grade
+5. Each video MUST get UNIQUE suggestions based on its ACTUAL content
 
 CRITICAL RULES:
 1. You MUST use the content analysis above to make suggestions - it describes what's ACTUALLY in the video
@@ -302,6 +313,9 @@ CRITICAL RULES:
 4. If the content analysis says "bright colors" → suggest different enhancements than if it says "dark moody"
 5. If the content analysis says "professional/business" → suggest different enhancements than if it says "casual/fun"
 6. Base EVERY suggestion on what the Vision API actually saw in the video frames
+7. If you see "people talking" → different suggestions than "landscape/nature"
+8. If you see "indoor/office" → different suggestions than "outdoor/sunny"
+9. READ the content analysis carefully and match suggestions to what it describes
 
 VIDEO METADATA (EXACT VALUES):
 - Duration: ${duration} seconds ${duration === 0 ? '(⚠️ Duration not detected - analyze based on other factors)' : duration < 5 ? '(VERY SHORT)' : duration < 15 ? '(SHORT)' : duration < 60 ? '(MEDIUM)' : duration < 300 ? '(LONG)' : '(VERY LONG)'}
@@ -387,7 +401,7 @@ Return JSON format:
     "position": "top|bottom|center" (if needed)
   },
   "speed": 1.0 (optional, only if clearly needed),
-  "reasoning": "Detailed explanation of why each suggestion is needed based on BOTH the actual video content analysis AND metadata. Be specific about what you saw in the video frames and how that influenced your suggestions."
+  "reasoning": "MUST reference the Vision API content analysis. Explain: 'Based on the Vision API analysis which showed [specific content from analysis], I suggest [enhancement] because [reason].' Be VERY specific about what the Vision API saw and how that led to each suggestion. Different videos MUST have different reasoning."
 }
 
 AVAILABLE PRESETS:
