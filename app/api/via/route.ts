@@ -2785,7 +2785,7 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
         }
         
         // Apply first transformation
-        let previewUrl = currentUrl
+        let previewUrl: string | undefined = currentUrl
         if (features[0]?.type === 'colorGrade') {
           previewUrl = CloudinaryTransformProcessor.applyColorGrade(
             effectivePublicId,
@@ -2800,18 +2800,21 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
           )
         }
         
+        // Ensure previewUrl is defined before chaining
+        if (!previewUrl) {
+          throw new Error('Failed to generate initial preview URL')
+        }
+        
         // Chain additional transformations by extracting publicId from previous URL
         for (let i = 1; i < features.length; i++) {
           const feature = features[i]
           if (feature.type === 'colorGrade') {
-            // Extract base URL and chain transformation
-            const baseUrl = previewUrl.split('?')[0]
+            // Chain transformation
             const newUrl = CloudinaryTransformProcessor.applyColorGrade(
               effectivePublicId,
               feature.preset || 'cinematic',
               'video'
             )
-            // Chain by combining transformations
             previewUrl = newUrl
           } else if (feature.type === 'applyEffect') {
             previewUrl = CloudinaryTransformProcessor.applyEffect(
@@ -2819,6 +2822,11 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
               feature.preset || 'glow',
               'video'
             )
+          }
+          
+          // Ensure previewUrl is still defined
+          if (!previewUrl) {
+            throw new Error(`Failed to chain transformation for feature ${i + 1}`)
           }
         }
         
