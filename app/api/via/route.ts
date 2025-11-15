@@ -2946,18 +2946,27 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
           console.error(`❌ Render API batch error (${renderResponse.status}): ${errorText}`)
           batchError = new Error(`Render API error (${renderResponse.status}): ${renderResponse.statusText}`)
           // Don't throw - fall through to sequential processing
+          console.log('🔄 Batch failed, will try sequential processing...')
         } else {
-          const renderData = await renderResponse.json()
-          console.log(`📤 Render API batch response:`, JSON.stringify(renderData, null, 2))
-          
-          if (renderData.success && renderData.videoUrl) {
-            console.log(`✅ Batch processed via Render API: ${renderData.videoUrl}`)
-            batchSucceeded = true
-            return renderData.videoUrl
-          } else {
-            console.error(`❌ Render API batch returned unsuccessful:`, renderData)
-            batchError = new Error(renderData.message || renderData.error || 'Render API batch processing failed')
+          try {
+            const renderData = await renderResponse.json()
+            console.log(`📤 Render API batch response:`, JSON.stringify(renderData, null, 2))
+            
+            if (renderData.success && renderData.videoUrl) {
+              console.log(`✅ Batch processed via Render API: ${renderData.videoUrl}`)
+              batchSucceeded = true
+              return renderData.videoUrl
+            } else {
+              console.error(`❌ Render API batch returned unsuccessful:`, renderData)
+              batchError = new Error(renderData.message || renderData.error || 'Render API batch processing failed')
+              // Don't throw - fall through to sequential processing
+              console.log('🔄 Batch unsuccessful, will try sequential processing...')
+            }
+          } catch (jsonError) {
+            console.error('❌ Failed to parse Render API response as JSON:', jsonError)
+            batchError = new Error('Render API returned invalid response')
             // Don't throw - fall through to sequential processing
+            console.log('🔄 Batch response parse failed, will try sequential processing...')
           }
         }
       } catch (error) {
@@ -2988,20 +2997,33 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
           params: feature,
         }
         console.log(`🔄 Sequential: Processing ${feature.type} (${feature.preset || 'default'})`)
-        const processedUrl = await videoProcessor.process(currentUrl, instruction)
-        if (!processedUrl) {
-          throw new Error(`Failed to process feature: ${feature.type}`)
+        try {
+          const processedUrl = await videoProcessor.process(currentUrl, instruction)
+          if (!processedUrl) {
+            throw new Error(`Failed to process feature: ${feature.type} - no URL returned`)
+          }
+          currentUrl = processedUrl
+          console.log(`✅ Sequential: ${feature.type} completed, new URL: ${processedUrl.substring(0, 80)}...`)
+        } catch (featureError) {
+          console.error(`❌ Sequential: Failed to process ${feature.type}:`, featureError)
+          // Continue to next feature instead of failing completely
+          // This allows partial success
+          throw new Error(`Failed to process feature ${feature.type}: ${featureError instanceof Error ? featureError.message : String(featureError)}`)
         }
-        currentUrl = processedUrl
-        console.log(`✅ Sequential: ${feature.type} completed, new URL: ${processedUrl.substring(0, 80)}...`)
+      }
+      
+      if (!currentUrl || currentUrl === inputVideoUrl) {
+        throw new Error('Sequential processing did not produce a valid processed URL')
       }
       
       console.log('✅ Sequential processing completed successfully!')
       return currentUrl
     } catch (sequentialError) {
-      console.error('❌ Sequential processing also failed:', sequentialError)
+      console.error('❌ Sequential processing failed:', sequentialError)
       // If sequential processing fails, re-throw the batch error if available, otherwise the sequential error
-      throw batchError || sequentialError
+      const finalError = batchError || sequentialError
+      console.error('❌ Both batch and sequential processing failed. Throwing error:', finalError)
+      throw finalError
     }
   } catch (error) {
     console.error('❌ Combined features error (outer catch):', error)
