@@ -211,6 +211,26 @@ export async function POST(request: NextRequest) {
             }
           })
           
+          // Build content array with proper types for Vision API
+          const contentParts: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [
+            {
+              type: 'text',
+              text: `Analyze these ${framePaths.length} frames extracted from a video (start, middle, end). Describe:
+1. Visual content (what's in the video - people, objects, scenes, activities)
+2. Color palette (bright, dark, muted, vibrant, warm, cool)
+3. Lighting conditions (bright, dim, natural, artificial, contrast)
+4. Overall mood/atmosphere (professional, casual, dramatic, fun, serious)
+5. Quality issues visible (noise, blur, compression artifacts, overexposure, underexposure)
+6. What enhancements would actually improve THIS specific video content
+
+Be specific and detailed. This analysis will determine which enhancements to suggest.`
+            },
+            ...frameImages.map(img => ({
+              type: 'image_url' as const,
+              image_url: img.image_url
+            }))
+          ]
+          
           const visionResponse = await openai.chat.completions.create({
             model: 'gpt-4o',
             messages: [
@@ -220,21 +240,7 @@ export async function POST(request: NextRequest) {
               },
               {
                 role: 'user',
-                content: [
-                  {
-                    type: 'text',
-                    text: `Analyze these ${framePaths.length} frames extracted from a video (start, middle, end). Describe:
-1. Visual content (what's in the video - people, objects, scenes, activities)
-2. Color palette (bright, dark, muted, vibrant, warm, cool)
-3. Lighting conditions (bright, dim, natural, artificial, contrast)
-4. Overall mood/atmosphere (professional, casual, dramatic, fun, serious)
-5. Quality issues visible (noise, blur, compression artifacts, overexposure, underexposure)
-6. What enhancements would actually improve THIS specific video content
-
-Be specific and detailed. This analysis will determine which enhancements to suggest.`
-                  },
-                  ...frameImages
-                ]
+                content: contentParts
               }
             ],
             max_tokens: 500
