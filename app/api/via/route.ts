@@ -2773,7 +2773,7 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
     const useInstantPreview = params.instantPreview !== false && features.length <= 3
     const canUseInstant = features.every((f: any) => 
       f.type === 'colorGrade' || 
-      (f.type === 'applyEffect' && ['glow', 'blur', 'sharpen'].includes(f.preset?.toLowerCase()))
+      (f.type === 'applyEffect' && ['glow', 'blur', 'sharpen', 'soft focus', 'bokeh'].includes(f.preset?.toLowerCase()))
     )
     
     if (useInstantPreview && canUseInstant) {
