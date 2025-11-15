@@ -3,10 +3,9 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { v2 as cloudinary } from 'cloudinary'
 import OpenAI from 'openai'
-import fs from 'fs'
-import path from 'path'
-import os from 'os'
-import ffmpeg from 'fluent-ffmpeg'
+
+// Render API URL for FFmpeg processing (if deployed)
+const RENDER_API_URL = process.env.RENDER_API_URL || process.env.NEXT_PUBLIC_RENDER_API_URL
 
 // Configure Cloudinary - use server-side env vars (without NEXT_PUBLIC_)
 cloudinary.config({
@@ -19,13 +18,42 @@ const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
 })
 
-// Helper function to get writable temp directory (works on Vercel and local)
-function getTempDir(): string {
-  // On Vercel, use /tmp which is writable
-  if (process.env.VERCEL) {
-    return '/tmp'
+// Helper function to extract frames using Render API
+async function extractFramesWithRender(videoUrl: string, frameTimes: number[]): Promise<string[]> {
+  if (!RENDER_API_URL) {
+    throw new Error('RENDER_API_URL not configured - cannot extract frames')
   }
-  return process.env.TMPDIR || process.env.TEMP || os.tmpdir()
+  
+  console.log(`🌐 Using Render API to extract ${frameTimes.length} frames...`)
+  
+  try {
+    const renderResponse = await fetch(`${RENDER_API_URL}/extract-frames`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        videoUrl,
+        frameTimes, // Array of timestamps in seconds
+      }),
+      signal: AbortSignal.timeout(60000), // 60 second timeout
+    })
+    
+    if (!renderResponse.ok) {
+      const errorText = await renderResponse.text()
+      throw new Error(`Render API error (${renderResponse.status}): ${errorText}`)
+    }
+    
+    const renderData = await renderResponse.json()
+    
+    if (renderData.success && renderData.frames && Array.isArray(renderData.frames)) {
+      console.log(`✅ Extracted ${renderData.frames.length} frames via Render API`)
+      return renderData.frames // Array of base64 image strings
+    } else {
+      throw new Error(renderData.message || renderData.error || 'Frame extraction failed')
+    }
+  } catch (renderError: any) {
+    console.error('❌ Render API frame extraction failed:', renderError)
+    throw new Error(`Frame extraction failed: ${renderError.message || 'Unknown error'}`)
+  }
 }
 
 /**
@@ -159,80 +187,68 @@ export async function POST(request: NextRequest) {
     
     try {
       console.log('🎬 Starting REAL video content analysis (extracting frames)...')
-      const tempDir = getTempDir()
-      if (!fs.existsSync(tempDir)) {
-        fs.mkdirSync(tempDir, { recursive: true })
-      }
       
-      // Download video temporarily
-      console.log('📥 Downloading video for frame extraction...')
-      const videoResponse = await fetch(mediaUrl)
-      if (!videoResponse.ok) {
-        throw new Error(`Failed to download video: ${videoResponse.status}`)
-      }
-      
-      const tempVideoPath = path.join(tempDir, `analyze_${Date.now()}.mp4`)
-      const arrayBuffer = await videoResponse.arrayBuffer()
-      fs.writeFileSync(tempVideoPath, Buffer.from(arrayBuffer))
-      console.log('✅ Video downloaded, extracting frames...')
-      
-      // Extract 3 frames (start, middle, end) for analysis
-      const framePaths: string[] = []
+      // Calculate frame times (start, middle, end)
       const frameTimes = duration > 0 
         ? [Math.max(0, duration * 0.1), Math.max(0, duration * 0.5), Math.max(0, duration * 0.9)]
         : [0.5, 1, 1.5] // Fallback times if duration unknown
       
       console.log(`📸 Extracting frames at: ${frameTimes.join(', ')}s`)
       
-      for (let i = 0; i < 3; i++) {
-        const framePath = path.join(tempDir, `frame_${i}_${Date.now()}.jpg`)
-        try {
-          await new Promise<void>((resolve, reject) => {
-            const ffmpegProcess = ffmpeg(tempVideoPath)
-              .screenshots({
-                timestamps: [frameTimes[i]],
-                filename: path.basename(framePath),
-                folder: path.dirname(framePath),
-                size: '640x360' // Smaller for faster processing
+      // Extract frames using Render API (works on Vercel)
+      let frameBase64Images: string[] = []
+      
+      if (RENDER_API_URL) {
+        console.log('🌐 Using Render API for frame extraction...')
+        frameBase64Images = await extractFramesWithRender(mediaUrl, frameTimes)
+      } else {
+        // Fallback: Use Cloudinary to extract frames (if Render API not available)
+        console.log('☁️ Using Cloudinary for frame extraction (Render API not configured)...')
+        frameBase64Images = await Promise.all(
+          frameTimes.map(async (time, index) => {
+            try {
+              // Use Cloudinary's video frame extraction (snapshot at specific time)
+              const frameUrl = cloudinary.url(videoPublicId, {
+                resource_type: 'video',
+                format: 'jpg',
+                transformation: [
+                  { start_offset: Math.round(time) }, // Round to nearest second
+                  { width: 640, height: 360, crop: 'scale', quality: 'auto' }
+                ]
               })
-              .on('end', () => {
-                if (fs.existsSync(framePath)) {
-                  framePaths.push(framePath)
-                  console.log(`✅ Frame ${i + 1} extracted: ${framePath}`)
-                } else {
-                  console.warn(`⚠️ Frame ${i + 1} file not created`)
-                }
-                resolve()
-              })
-              .on('error', (err) => {
-                console.error(`❌ Frame ${i + 1} extraction error:`, err)
-                reject(err)
-              })
+              
+              // Download the frame
+              const frameResponse = await fetch(frameUrl)
+              if (!frameResponse.ok) {
+                throw new Error(`Failed to fetch frame: ${frameResponse.status}`)
+              }
+              
+              const arrayBuffer = await frameResponse.arrayBuffer()
+              const base64 = Buffer.from(arrayBuffer).toString('base64')
+              console.log(`✅ Frame ${index + 1} extracted via Cloudinary`)
+              return base64
+            } catch (error) {
+              console.error(`❌ Failed to extract frame ${index + 1} via Cloudinary:`, error)
+              throw error
+            }
           })
-        } catch (frameError) {
-          console.error(`❌ Failed to extract frame ${i + 1}:`, frameError)
-          // Continue with other frames
-        }
+        )
       }
       
-      if (framePaths.length === 0) {
+      if (frameBase64Images.length === 0) {
         throw new Error('No frames extracted - cannot perform content analysis')
       }
       
-      console.log(`✅ Successfully extracted ${framePaths.length} frames for analysis`)
+      console.log(`✅ Successfully extracted ${frameBase64Images.length} frames for analysis`)
         
       // Analyze frames with OpenAI Vision API
-      console.log(`📸 Analyzing ${framePaths.length} video frames with OpenAI Vision API...`)
-      const frameImages = framePaths.map(framePath => {
-        const imageBuffer = fs.readFileSync(framePath)
-        const base64Image = imageBuffer.toString('base64')
-        return {
-          type: 'image_url' as const,
-          image_url: {
-            url: `data:image/jpeg;base64,${base64Image}`
-          }
+      console.log(`📸 Analyzing ${frameBase64Images.length} video frames with OpenAI Vision API...`)
+      const frameImages = frameBase64Images.map(base64Image => ({
+        type: 'image_url' as const,
+        image_url: {
+          url: `data:image/jpeg;base64,${base64Image}`
         }
-      })
+      }))
       
       // Build content array with proper types for Vision API
       const contentParts: Array<{ type: 'text'; text: string } | { type: 'image_url'; image_url: { url: string } }> = [
@@ -280,21 +296,18 @@ IMPORTANT: Base your analysis ONLY on what you see in these frames. Be detailed 
       console.log('✅ REAL video content analysis completed!')
       console.log('📊 Analysis preview:', videoContentAnalysis.substring(0, 300) + '...')
       
-      // Cleanup frames
-      framePaths.forEach(framePath => {
-        try {
-          if (fs.existsSync(framePath)) fs.unlinkSync(framePath)
-        } catch {}
-      })
-      
-      // Cleanup video
-      try {
-        if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath)
-      } catch {}
-      
     } catch (contentAnalysisError: any) {
       console.error('❌ REAL video content analysis FAILED:', contentAnalysisError?.message || contentAnalysisError)
       console.error('❌ Stack:', contentAnalysisError?.stack)
+      
+      // If Render API is not configured, provide helpful error message
+      if (!RENDER_API_URL && contentAnalysisError?.message?.includes('RENDER_API_URL')) {
+        throw new Error(
+          `Video content analysis requires Render API. Please configure RENDER_API_URL environment variable. ` +
+          `Alternatively, ensure Cloudinary frame extraction is working. Error: ${contentAnalysisError.message}`
+        )
+      }
+      
       // DO NOT continue - throw error to prevent fallback
       throw new Error(`Video content analysis failed: ${contentAnalysisError?.message || 'Unknown error'}. Cannot provide accurate suggestions without analyzing actual video content.`)
     }
