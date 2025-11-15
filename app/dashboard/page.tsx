@@ -596,48 +596,115 @@ const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
         videoPublicId={selectedMedia?.publicId || ''}
         videoUrl={selectedMedia?.url}
         onApplyTemplate={async (operations) => {
-          // Apply template operations sequentially via VIA
-          console.log('🎨 Applying template with', operations.length, 'operations')
+          // Apply template operations in batch via combineFeatures for faster processing
+          console.log('🎨 Applying template with', operations.length, 'operations (batch mode - faster!)')
           
-          // Clear queue and start fresh
-          sequenceQueueRef.current = []
+          if (!selectedMedia) {
+            console.error('❌ No video selected')
+            return
+          }
           
-          // Build command queue
-          const commands: string[] = []
-          for (let i = 0; i < operations.length; i++) {
-            const op = operations[i]
-            let command = ''
+          try {
+            // Convert template operations to combineFeatures format
+            const features = operations.map(op => {
+              const feature: any = {
+                type: op.operation,
+                ...op.params,
+              }
+              return feature
+            })
             
-            // Generate proper natural language commands
-            switch (op.operation) {
-              case 'colorGrade':
-                command = `Apply ${op.params.preset || 'Cinematic'} color grade to the video`
-                break
-              case 'applyEffect':
-                command = `Add ${op.params.preset || 'Glow'} effect to the video`
-                break
-              case 'addText':
-                command = `Apply ${op.params.preset || 'Bold'} text style "${op.params.text || 'Welcome'}" at ${op.params.position || 'center'}`
-                break
-              case 'addMusic':
-                command = `Add ${op.params.preset || 'Ambient'} background music to the video`
-                break
-              case 'addTransition':
-                command = `Apply ${op.params.preset || 'Fade'} transition between clips`
-                break
-              default:
-                command = `${op.operation === 'colorGrade' ? 'Apply' : op.operation === 'applyEffect' ? 'Apply' : 'Add'} ${op.params.preset || op.params.text || ''} ${op.operation === 'addText' ? 'text' : op.operation === 'colorGrade' ? 'color grade' : 'effect'}`
+            console.log('🚀 Calling VIA API directly with combineFeatures for batch processing')
+            console.log('📦 Features:', JSON.stringify(features, null, 2))
+            
+            // Direct API call to VIA with combineFeatures operation (bypasses AI parsing for speed)
+            const response = await fetch('/api/via', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                prompt: `Apply multiple features: ${features.map((f: any) => f.preset || f.type).join(', ')}`,
+                videoPublicId: selectedMedia.publicId,
+                videoUrl: selectedMedia.url,
+                instruction: {
+                  operation: 'combineFeatures',
+                  params: { features },
+                  message: `Applying template with ${operations.length} effects in batch mode...`,
+                },
+              }),
+            })
+            
+            if (!response.ok) {
+              const errorData = await response.json()
+              throw new Error(errorData.message || errorData.error || 'Template processing failed')
             }
             
-            commands.push(command)
+            const data = await response.json()
+            
+            if (data.videoUrl) {
+              console.log('✅ Template batch processing complete! New URL:', data.videoUrl)
+              // Update video URL directly using the same logic as onVideoUpdate
+              if (selectedMedia) {
+                // Validate URL
+                if (!data.videoUrl || !data.videoUrl.startsWith('http')) {
+                  throw new Error('Invalid video URL returned from processing')
+                }
+                
+                // Add current URL to history before updating
+                if (selectedMedia.url && data.videoUrl !== selectedMedia.url) {
+                  setEditHistory(prev => [...prev, selectedMedia.url])
+                }
+                
+                // Update mediaItems and selectedMedia
+                const updated = mediaItems.map(item =>
+                  item.publicId === selectedMedia.publicId ? { ...item, url: data.videoUrl } : item
+                )
+                setMediaItems(updated)
+                setSelectedMedia({ ...selectedMedia, url: data.videoUrl })
+                
+                // Force ReactPlayer remount with new URL
+                setVideoKey(prev => prev + 1)
+                
+                console.log('✅ Template video updated successfully')
+              } else {
+                throw new Error('No video selected')
+              }
+            } else {
+              throw new Error('No video URL returned from batch processing')
+            }
+          } catch (error) {
+            console.error('❌ Template batch processing error:', error)
+            // Fallback to sequential processing if batch fails
+            console.log('🔄 Falling back to sequential processing...')
+            
+            const commands: string[] = []
+            for (let i = 0; i < operations.length; i++) {
+              const op = operations[i]
+              let command = ''
+              
+              switch (op.operation) {
+                case 'colorGrade':
+                  command = `Apply ${op.params.preset || 'Cinematic'} color grade to the video`
+                  break
+                case 'applyEffect':
+                  command = `Add ${op.params.preset || 'Glow'} effect to the video`
+                  break
+                case 'addText':
+                  command = `Apply ${op.params.preset || 'Bold'} text style "${op.params.text || 'Welcome'}" at ${op.params.position || 'center'}`
+                  break
+                default:
+                  command = `Apply ${op.params.preset || ''} ${op.operation}`
+              }
+              
+              commands.push(command)
+            }
+            
+            // Process sequentially as fallback
+            for (const command of commands) {
+              await addToSequenceQueue(command)
+            }
           }
-          
-          // Process all commands sequentially
-          for (const command of commands) {
-            await addToSequenceQueue(command)
-          }
-          
-          console.log('✅ Template application complete')
         }}
       />
 

@@ -1271,9 +1271,85 @@ class VideoProcessor {
           break
         }
         
+        case 'combineFeatures': {
+          // Process multiple features in one pass (batch mode)
+          const { features } = instruction.params || {}
+          if (!features || !Array.isArray(features) || features.length === 0) {
+            console.warn('⚠️ combineFeatures: No features provided')
+            break
+          }
+          
+          console.log(`🔗 Processing ${features.length} features in batch mode`)
+          
+          // Apply each feature to the command sequentially
+          // All filters will be combined in a single FFmpeg pass
+          for (let i = 0; i < features.length; i++) {
+            const feature = features[i]
+            const featureInstruction = {
+              operation: feature.type,
+              params: feature
+            }
+            
+            console.log(`  [${i + 1}/${features.length}] Applying: ${feature.type} (${feature.preset || 'default'})`)
+            
+            // Recursively apply each feature
+            switch (feature.type) {
+              case 'colorGrade':
+                command = this.applyColorGrade(command, feature.preset, feature)
+                break
+              case 'applyEffect':
+                command = this.applyEffect(command, feature)
+                break
+              case 'addText':
+              case 'customText':
+                command = this.addTextOverlay(command, feature)
+                break
+              case 'filter':
+                command = this.applyFilter(command, feature.type, feature)
+                break
+              case 'addCaptions':
+                command = this.addCaptions(command, feature)
+                break
+              default:
+                console.warn(`⚠️ Unknown feature type in combineFeatures: ${feature.type}`)
+            }
+          }
+          
+          console.log(`✅ All ${features.length} features applied in batch mode`)
+          break
+        }
+        
         default:
           console.warn(`⚠️ Unknown operation: ${instruction.operation}`)
           // Pass through without modification
+      }
+      
+      // OPTIMIZATION: Use fast encoding settings for speed
+      // For templates, prioritize speed over quality (can be improved later)
+      const useFastMode = instruction.operation === 'combineFeatures' || 
+                         instruction.params?.fastMode !== false
+      
+      if (useFastMode) {
+        // Fast encoding settings for 15-30 second processing
+        command = command
+          .videoCodec('libx264')  // H.264 codec
+          .addOption('-preset', 'veryfast')  // Very fast encoding (vs slow/medium)
+          .addOption('-crf', '23')  // Good quality but faster than lower CRF
+          .addOption('-movflags', '+faststart')  // Web optimization
+          .addOption('-pix_fmt', 'yuv420p')  // Compatibility
+          .audioCodec('aac')
+          .audioBitrate('128k')
+        console.log('⚡ Using fast encoding mode for quicker processing')
+      } else {
+        // High quality mode (slower)
+        command = command
+          .videoCodec('libx264')
+          .addOption('-preset', 'medium')
+          .addOption('-crf', '18')
+          .addOption('-movflags', '+faststart')
+          .addOption('-pix_fmt', 'yuv420p')
+          .audioCodec('aac')
+          .audioBitrate('192k')
       }
       
       // Set output path (music mixing already configured output options above)

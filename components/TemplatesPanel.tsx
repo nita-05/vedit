@@ -50,14 +50,20 @@ export default function TemplatesPanel({
       return
     }
 
+    if (!videoUrl) {
+      alert('Video is not ready. Please wait for video to load.')
+      return
+    }
+
     setIsLoading(true)
     try {
-      // Apply template operations sequentially
-      onApplyTemplate(template.operations)
-      onClose()
-    } catch (error) {
+      // Apply template operations (now uses batch processing for speed)
+      await onApplyTemplate(template.operations)
+      // Don't close immediately - let user see the processing
+      // onClose() will be called after processing completes
+    } catch (error: any) {
       console.error('Failed to apply template:', error)
-      alert('Failed to apply template')
+      alert(`Failed to apply template: ${error?.message || 'Unknown error'}. Please try again.`)
     } finally {
       setIsLoading(false)
     }

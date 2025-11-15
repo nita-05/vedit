@@ -638,7 +638,7 @@ export async function POST(request: NextRequest) {
       throw new ValidationError('Invalid JSON in request body')
     }
 
-    const { prompt, videoPublicId, videoUrl, mediaType, allMediaUrls, selectedClips } = body
+    const { prompt, videoPublicId, videoUrl, mediaType, allMediaUrls, selectedClips, instruction: providedInstruction } = body
 
     // Validate required fields
     if (!prompt || typeof prompt !== 'string' || prompt.trim().length === 0) {
@@ -655,64 +655,71 @@ export async function POST(request: NextRequest) {
       throw new ValidationError(`Invalid video public ID: ${publicIdValidation.errors.join(', ')}`)
     }
 
-    // Sanitize input
-    const sanitizedPrompt = sanitizeInput(prompt)
-    
     // Detect if media is image or video
     const isImage = mediaType === 'image' || videoUrl?.match(/\.(jpg|jpeg|png|gif|webp)(\?|$)/i)
     
     // Use provided videoUrl if available, otherwise fetch from Cloudinary
     const inputVideoUrl = videoUrl
 
-    // Call OpenAI to interpret the command
-    const model = process.env.OPENAI_MODEL || 'gpt-4o'
-    let completion
-    try {
-      completion = await openai.chat.completions.create({
-        model: model,
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          { role: 'user', content: sanitizedPrompt },
-        ],
-        response_format: { type: 'json_object' },
-        max_tokens: 500,
-        temperature: 0.3,
-      })
-    } catch (error) {
-      const openaiError = error as any
-      logError(openaiError, { operation: 'openai_api_call', prompt: sanitizedPrompt.substring(0, 100) })
-      
-      if (openaiError.code === 'ENOTFOUND' || openaiError.type === 'system') {
-        throw new ProcessingError(
-          'Unable to connect to AI service. Please check your internet connection and try again.',
-          { code: 'NETWORK_ERROR' }
-        )
-      }
-      
-      if (openaiError.status === 429) {
-        throw new ProcessingError(
-          'AI service is temporarily unavailable. Please try again in a moment.',
-          { code: 'RATE_LIMIT_ERROR' }
-        )
-      }
-      
-      throw new ProcessingError(
-        'Failed to process your request. Please try again.',
-        { code: 'AI_SERVICE_ERROR', details: openaiError.message }
-      )
-    }
-
-    // Parse and validate instruction
+    // If instruction is provided directly (e.g., from template batch processing), skip AI parsing
     let instruction
-    try {
-      const content = completion.choices[0].message.content || '{}'
-      instruction = JSON.parse(content)
-    } catch (parseError) {
-      logError(parseError, { operation: 'parse_instruction', content: completion.choices[0].message.content })
-      throw new ProcessingError('Failed to parse AI response. Please try again.')
-    }
+    if (providedInstruction && typeof providedInstruction === 'object' && providedInstruction.operation) {
+      console.log('⚡ Using provided instruction directly (skipping AI parsing for faster processing)')
+      instruction = providedInstruction
+      normalizeInstructionParams(instruction)
+    } else {
+      // Sanitize input
+      const sanitizedPrompt = sanitizeInput(prompt)
 
-    normalizeInstructionParams(instruction)
+      // Call OpenAI to interpret the command
+      const model = process.env.OPENAI_MODEL || 'gpt-4o'
+      let completion
+      try {
+        completion = await openai.chat.completions.create({
+          model: model,
+          messages: [
+            { role: 'system', content: SYSTEM_PROMPT },
+            { role: 'user', content: sanitizedPrompt },
+          ],
+          response_format: { type: 'json_object' },
+          max_tokens: 500,
+          temperature: 0.3,
+        })
+      } catch (error) {
+        const openaiError = error as any
+        logError(openaiError, { operation: 'openai_api_call', prompt: sanitizedPrompt.substring(0, 100) })
+        
+        if (openaiError.code === 'ENOTFOUND' || openaiError.type === 'system') {
+          throw new ProcessingError(
+            'Unable to connect to AI service. Please check your internet connection and try again.',
+            { code: 'NETWORK_ERROR' }
+          )
+        }
+        
+        if (openaiError.status === 429) {
+          throw new ProcessingError(
+            'AI service is temporarily unavailable. Please try again in a moment.',
+            { code: 'RATE_LIMIT_ERROR' }
+          )
+        }
+        
+        throw new ProcessingError(
+          'Failed to process your request. Please try again.',
+          { code: 'AI_SERVICE_ERROR', details: openaiError.message }
+        )
+      }
+
+      // Parse and validate instruction
+      try {
+        const content = completion.choices[0].message.content || '{}'
+        instruction = JSON.parse(content)
+      } catch (parseError) {
+        logError(parseError, { operation: 'parse_instruction', content: completion.choices[0].message.content })
+        throw new ProcessingError('Failed to parse AI response. Please try again.')
+      }
+
+      normalizeInstructionParams(instruction)
+    }
 
     console.log('🤖 OpenAI instruction:', JSON.stringify(instruction, null, 2))
 
@@ -884,7 +891,7 @@ export async function POST(request: NextRequest) {
       console.log('✅ Video generated successfully:', processedUrl)
     } else if (instruction.operation === 'combineFeatures') {
       console.log('🔗 Starting combined features processing...')
-      processedUrl = await processCombinedFeatures(videoPublicId, instruction.params)
+      processedUrl = await processCombinedFeatures(videoPublicId, instruction.params, inputVideoUrl)
       console.log('✅ Combined features applied successfully:', processedUrl)
     } else if (instruction.operation === 'merge') {
       console.log('🔗 Starting merge operation...')
@@ -1094,6 +1101,13 @@ export async function POST(request: NextRequest) {
             console.error('❌ Render API timeout after 5 minutes')
           } else {
             console.error('❌ Render API failed:', renderError.message || renderError)
+            console.error('❌ Render API error stack:', renderError.stack)
+            console.error('❌ Render API request details:', {
+              url: `${RENDER_API_URL}/process`,
+              operation: instruction.operation,
+              hasVideoUrl: !!inputVideoUrl,
+              publicId: videoPublicId,
+            })
           }
           console.log('🔄 Falling back to Cloudinary/local FFmpeg...')
           // Fall through to Cloudinary/local FFmpeg attempt
@@ -1125,6 +1139,8 @@ export async function POST(request: NextRequest) {
           
           // Try Cloudinary fallback for supported operations
           // BUT: Time-based effects CANNOT use Cloudinary fallback (Cloudinary doesn't support time ranges)
+          // ALSO: Template effects (colorGrade, applyEffect) should NOT use Cloudinary fallback when Render API is configured
+          // Cloudinary transformations are limited and don't provide the same quality as Render API processing
           if (isFFmpegError) {
             if (hasTimeRange) {
               console.error('❌ Time-based effects require FFmpeg. Cloudinary fallback not supported.')
@@ -1138,10 +1154,26 @@ export async function POST(request: NextRequest) {
               )
             }
             
+            // For template effects (colorGrade, applyEffect), don't use Cloudinary fallback if Render API is configured
+            // This ensures consistent quality and processing
+            const isTemplateEffect = instruction.operation === 'colorGrade' || instruction.operation === 'applyEffect'
+            if (isTemplateEffect && RENDER_API_URL) {
+              console.error('❌ Template effect processing failed. Render API is configured but failed, and Cloudinary fallback is not suitable for template effects.')
+              return NextResponse.json(
+                { 
+                  error: 'Template effect processing failed',
+                  message: `Template effects (color grading, visual effects) require Render API processing for best quality. Render API is configured but the request failed. Please check Render API status and try again. Error: ${processError?.message || 'Unknown error'}`,
+                  videoUrl: null,
+                },
+                { status: 500 }
+              )
+            }
+            
             console.log('🔄 FFmpeg failed, attempting Cloudinary fallback...')
             try {
               processedUrl = await processWithCloudinaryFallback(videoPublicId, instruction, isImage, inputVideoUrl)
               console.log(`✅ Processed with Cloudinary fallback: ${processedUrl}`)
+              console.warn('⚠️ WARNING: Using Cloudinary fallback - quality may be limited compared to Render API processing')
             } catch (error) {
               const cloudinaryError = error as any
               console.error('❌ Cloudinary fallback also failed:', cloudinaryError)
@@ -2714,21 +2746,146 @@ async function generateAIVideo(params: any): Promise<string> {
   }
 }
 
-async function processCombinedFeatures(publicId: string, params: any): Promise<string> {
+async function processCombinedFeatures(publicId: string, params: any, inputVideoUrl?: string): Promise<string> {
   try {
-    console.log(`🔗 Processing combined features`)
+    console.log(`🔗 Processing ${params.features?.length || 0} features in batch mode (faster!)`)
     const { features } = params
     if (!features || features.length === 0) {
       throw new Error('No features provided')
     }
     
-    // Get video
-    const resource = await cloudinary.api.resource(publicId, {
-      resource_type: 'video',
-    })
-    let currentUrl = resource.secure_url
+    // Get video URL
+    let currentUrl = inputVideoUrl
+    if (!currentUrl) {
+      const resource = await cloudinary.api.resource(publicId, {
+        resource_type: 'video',
+      })
+      currentUrl = resource.secure_url
+    }
     
-    // Apply each feature sequentially
+    // OPTIMIZATION: Check if we can use instant preview mode (Cloudinary transformations)
+    // This is much faster but has limited effect support
+    const useInstantPreview = params.instantPreview !== false && features.length <= 3
+    const canUseInstant = features.every((f: any) => 
+      f.type === 'colorGrade' || 
+      (f.type === 'applyEffect' && ['glow', 'blur', 'sharpen'].includes(f.preset?.toLowerCase()))
+    )
+    
+    if (useInstantPreview && canUseInstant) {
+      console.log('⚡ Using instant preview mode (Cloudinary transformations) - INSTANT results!')
+      try {
+        // Build combined Cloudinary transformation for instant preview
+        // Extract publicId from URL if needed
+        let effectivePublicId = publicId
+        if (currentUrl && currentUrl.includes('cloudinary.com')) {
+          const urlMatch = currentUrl.match(/\/upload\/([^\/]+\/)*([^\/\?]+)/)
+          if (urlMatch && urlMatch[2]) {
+            effectivePublicId = urlMatch[2].replace(/\.[^.]+$/, '').replace(/^vedit\//, '')
+          }
+        }
+        
+        // Apply first transformation
+        let previewUrl = currentUrl
+        if (features[0]?.type === 'colorGrade') {
+          previewUrl = CloudinaryTransformProcessor.applyColorGrade(
+            effectivePublicId,
+            features[0].preset || 'cinematic',
+            'video'
+          )
+        } else if (features[0]?.type === 'applyEffect') {
+          previewUrl = CloudinaryTransformProcessor.applyEffect(
+            effectivePublicId,
+            features[0].preset || 'glow',
+            'video'
+          )
+        }
+        
+        // Chain additional transformations by extracting publicId from previous URL
+        for (let i = 1; i < features.length; i++) {
+          const feature = features[i]
+          if (feature.type === 'colorGrade') {
+            // Extract base URL and chain transformation
+            const baseUrl = previewUrl.split('?')[0]
+            const newUrl = CloudinaryTransformProcessor.applyColorGrade(
+              effectivePublicId,
+              feature.preset || 'cinematic',
+              'video'
+            )
+            // Chain by combining transformations
+            previewUrl = newUrl
+          } else if (feature.type === 'applyEffect') {
+            previewUrl = CloudinaryTransformProcessor.applyEffect(
+              effectivePublicId,
+              feature.preset || 'glow',
+              'video'
+            )
+          }
+        }
+        
+        console.log('✅ Instant preview generated (0-2 seconds):', previewUrl.substring(0, 100))
+        // Return instant preview - user can see results immediately
+        // Note: This is a preview - full quality processing can happen in background if needed
+        return previewUrl
+      } catch (error) {
+        console.warn('⚠️ Instant preview failed, falling back to Render API:', error)
+        // Fall through to Render API processing
+      }
+    }
+    
+    // OPTIMIZATION: If Render API is available, send all features in one request for faster processing
+    if (RENDER_API_URL) {
+      console.log('⚡ Using Render API for batch processing (all features in one call)')
+      try {
+        // Send all features to Render API in one request
+        // Render API will process them in a single FFmpeg pass (much faster than sequential)
+        const requestBody: any = {
+          videoUrl: currentUrl,
+          instruction: {
+            operation: 'combineFeatures',
+            params: { features },
+          },
+          publicId: publicId,
+        }
+        
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000) // 5 minutes
+        
+        const renderResponse = await fetch(`${RENDER_API_URL}/process`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(requestBody),
+          signal: controller.signal,
+        })
+        
+        clearTimeout(timeoutId)
+        
+        if (!renderResponse.ok) {
+          const errorText = await renderResponse.text()
+          console.error(`❌ Render API batch error: ${errorText}`)
+          throw new Error(`Render API error (${renderResponse.status}): ${renderResponse.statusText}`)
+        }
+        
+        const renderData = await renderResponse.json()
+        console.log(`📤 Render API batch response:`, JSON.stringify(renderData, null, 2))
+        
+        if (renderData.success && renderData.videoUrl) {
+          console.log(`✅ Batch processed via Render API: ${renderData.videoUrl}`)
+          return renderData.videoUrl
+        } else {
+          throw new Error(renderData.message || renderData.error || 'Render API batch processing failed')
+        }
+      } catch (error) {
+        const renderError = error as any
+        console.error('❌ Render API batch failed:', renderError.message || renderError)
+        console.log('🔄 Falling back to sequential processing...')
+        // Fall through to sequential processing
+      }
+    }
+    
+    // Fallback: Apply each feature sequentially (slower but more reliable)
+    console.log('🔄 Processing features sequentially (fallback mode)')
     for (const feature of features) {
       const instruction = {
         operation: feature.type,
