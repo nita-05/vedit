@@ -891,8 +891,14 @@ export async function POST(request: NextRequest) {
       console.log('✅ Video generated successfully:', processedUrl)
     } else if (instruction.operation === 'combineFeatures') {
       console.log('🔗 Starting combined features processing...')
-      processedUrl = await processCombinedFeatures(videoPublicId, instruction.params, inputVideoUrl)
-      console.log('✅ Combined features applied successfully:', processedUrl)
+      try {
+        processedUrl = await processCombinedFeatures(videoPublicId, instruction.params, inputVideoUrl)
+        console.log('✅ Combined features applied successfully:', processedUrl)
+      } catch (combineError) {
+        console.error('❌ combineFeatures error caught in main handler:', combineError)
+        // Re-throw to be caught by outer catch - this ensures proper error handling
+        throw combineError
+      }
     } else if (instruction.operation === 'merge') {
       console.log('🔗 Starting merge operation...')
       // Merge supports clips from same video OR different videos
@@ -2906,6 +2912,7 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
     
     // OPTIMIZATION: If Render API is available, send all features in one request for faster processing
     let batchError: Error | null = null
+    let batchSucceeded = false
     if (RENDER_API_URL) {
       console.log('⚡ Using Render API for batch processing (all features in one call)')
       try {
@@ -2936,28 +2943,36 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
         
         if (!renderResponse.ok) {
           const errorText = await renderResponse.text()
-          console.error(`❌ Render API batch error: ${errorText}`)
+          console.error(`❌ Render API batch error (${renderResponse.status}): ${errorText}`)
           batchError = new Error(`Render API error (${renderResponse.status}): ${renderResponse.statusText}`)
-          throw batchError
-        }
-        
-        const renderData = await renderResponse.json()
-        console.log(`📤 Render API batch response:`, JSON.stringify(renderData, null, 2))
-        
-        if (renderData.success && renderData.videoUrl) {
-          console.log(`✅ Batch processed via Render API: ${renderData.videoUrl}`)
-          return renderData.videoUrl
+          // Don't throw - fall through to sequential processing
         } else {
-          batchError = new Error(renderData.message || renderData.error || 'Render API batch processing failed')
-          throw batchError
+          const renderData = await renderResponse.json()
+          console.log(`📤 Render API batch response:`, JSON.stringify(renderData, null, 2))
+          
+          if (renderData.success && renderData.videoUrl) {
+            console.log(`✅ Batch processed via Render API: ${renderData.videoUrl}`)
+            batchSucceeded = true
+            return renderData.videoUrl
+          } else {
+            console.error(`❌ Render API batch returned unsuccessful:`, renderData)
+            batchError = new Error(renderData.message || renderData.error || 'Render API batch processing failed')
+            // Don't throw - fall through to sequential processing
+          }
         }
       } catch (error) {
         const renderError = error as any
-        console.error('❌ Render API batch failed:', renderError.message || renderError)
+        console.error('❌ Render API batch failed with exception:', renderError.message || renderError)
         console.log('🔄 Backend falling back to sequential processing...')
         batchError = renderError instanceof Error ? renderError : new Error(String(renderError))
         // Fall through to sequential processing - don't throw, let sequential try
       }
+    }
+    
+    // If batch succeeded, we already returned above
+    if (batchSucceeded) {
+      // This shouldn't be reached, but just in case
+      throw new Error('Batch processing succeeded but didn\'t return URL')
     }
     
     // Fallback: Apply each feature sequentially (slower but more reliable)
