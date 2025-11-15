@@ -25,7 +25,11 @@ export default function TemplatesPanel({
   const [applyingTemplateId, setApplyingTemplateId] = useState<string | null>(null)
 
   useEffect(() => {
-    if (!isOpen) return
+    if (!isOpen) {
+      // Reset applying state when panel closes
+      setApplyingTemplateId(null)
+      return
+    }
 
     const fetchTemplates = async () => {
       try {
@@ -55,16 +59,24 @@ export default function TemplatesPanel({
       return
     }
 
+    // Prevent multiple clicks
+    if (applyingTemplateId !== null) {
+      return
+    }
+
     // Set loading state for this specific template only
+    console.log('🎨 Setting applying state for template:', template.id)
     setApplyingTemplateId(template.id)
+    
     try {
       // Apply template operations (now uses batch processing for speed)
       await onApplyTemplate(template.operations)
-      // Close panel after successful application
+      
+      // Wait a bit for the video to update, then close panel
       setTimeout(() => {
-        onClose()
         setApplyingTemplateId(null)
-      }, 500)
+        onClose()
+      }, 1000)
     } catch (error: any) {
       console.error('Failed to apply template:', error)
       alert(`Failed to apply template: ${error?.message || 'Unknown error'}. Please try again.`)
@@ -148,8 +160,11 @@ export default function TemplatesPanel({
                 <span>{template.operations.length} effects</span>
               </div>
               <button
-                onClick={() => handleApplyTemplate(template)}
-                disabled={applyingTemplateId !== null || !videoPublicId}
+                onClick={() => {
+                  console.log('🔘 Button clicked for template:', template.id, 'Current applying:', applyingTemplateId)
+                  handleApplyTemplate(template)
+                }}
+                disabled={(applyingTemplateId !== null && applyingTemplateId !== template.id) || !videoPublicId}
                 className="w-full px-4 py-2 rounded-lg bg-gradient-to-r from-vedit-purple to-vedit-blue text-white font-semibold hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {applyingTemplateId === template.id ? 'Applying...' : 'Apply Template'}
