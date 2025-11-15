@@ -2991,6 +2991,9 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
     }
     
     try {
+      let processedCount = 0
+      const initialUrl = currentUrl
+      
       for (const feature of features) {
         const instruction = {
           operation: feature.type,
@@ -2999,24 +3002,32 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
         console.log(`🔄 Sequential: Processing ${feature.type} (${feature.preset || 'default'})`)
         try {
           const processedUrl = await videoProcessor.process(currentUrl, instruction)
-          if (!processedUrl) {
-            throw new Error(`Failed to process feature: ${feature.type} - no URL returned`)
+          if (!processedUrl || processedUrl === currentUrl) {
+            console.warn(`⚠️ Sequential: ${feature.type} returned invalid or unchanged URL, skipping`)
+            continue
           }
           currentUrl = processedUrl
+          processedCount++
           console.log(`✅ Sequential: ${feature.type} completed, new URL: ${processedUrl.substring(0, 80)}...`)
         } catch (featureError) {
           console.error(`❌ Sequential: Failed to process ${feature.type}:`, featureError)
           // Continue to next feature instead of failing completely
-          // This allows partial success
-          throw new Error(`Failed to process feature ${feature.type}: ${featureError instanceof Error ? featureError.message : String(featureError)}`)
+          // This allows partial success - skip this feature and try the next one
+          console.warn(`⚠️ Skipping ${feature.type} and continuing with next feature...`)
+          continue
         }
       }
       
-      if (!currentUrl || currentUrl === inputVideoUrl) {
+      // Check if we processed at least one feature successfully
+      if (processedCount === 0) {
+        throw new Error('All features failed during sequential processing')
+      }
+      
+      if (!currentUrl || currentUrl === initialUrl) {
         throw new Error('Sequential processing did not produce a valid processed URL')
       }
       
-      console.log('✅ Sequential processing completed successfully!')
+      console.log(`✅ Sequential processing completed successfully! Processed ${processedCount}/${features.length} features`)
       return currentUrl
     } catch (sequentialError) {
       console.error('❌ Sequential processing failed:', sequentialError)
@@ -3031,3 +3042,4 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
     throw error
   }
 }
+
