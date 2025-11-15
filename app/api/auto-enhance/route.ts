@@ -40,7 +40,7 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { videoPublicId, autoApply = false } = body
+    const { videoPublicId, autoApply = false, videoDuration } = body
 
     if (!videoPublicId) {
       return NextResponse.json({ error: 'Video public ID is required' }, { status: 400 })
@@ -76,13 +76,22 @@ export async function POST(request: NextRequest) {
     })
 
     const mediaUrl = resource.secure_url
-    let duration = resource.duration || 0
+    let duration = videoDuration || resource.duration || 0 // Use client-side duration first (most reliable)
     const width = resource.width || 1920
     const height = resource.height || 1080
     const size = resource.bytes || 0
     const format = resource.format || 'mp4'
 
-    // If duration is 0 or missing, try to get it from video metadata
+    // Log which source we're using for duration
+    if (videoDuration && videoDuration > 0) {
+      duration = videoDuration
+      console.log(`✅ Using client-side detected duration: ${duration}s`)
+    } else if (resource.duration && resource.duration > 0) {
+      duration = resource.duration
+      console.log(`✅ Using Cloudinary API duration: ${duration}s`)
+    }
+
+    // If duration is still 0, try server-side detection fallback
     if (!duration || duration === 0) {
       try {
         // Try to get duration from video_info if available

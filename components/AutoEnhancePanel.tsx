@@ -8,6 +8,7 @@ interface AutoEnhancePanelProps {
   onClose: () => void
   videoPublicId: string
   videoUrl?: string
+  videoDuration?: number // Duration in seconds from client-side video element
   onApplyEnhancements: (operations: Array<{ operation: string; params: any }>) => void
 }
 
@@ -16,6 +17,7 @@ export default function AutoEnhancePanel({
   onClose,
   videoPublicId,
   videoUrl,
+  videoDuration,
   onApplyEnhancements,
 }: AutoEnhancePanelProps) {
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -47,6 +49,7 @@ export default function AutoEnhancePanel({
         body: JSON.stringify({
           videoPublicId,
           autoApply,
+          videoDuration, // Pass client-side detected duration if available
         }),
       })
 

@@ -714,6 +714,7 @@ const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
         onClose={() => setIsAutoEnhanceOpen(false)}
         videoPublicId={selectedMedia?.publicId || ''}
         videoUrl={selectedMedia?.url}
+        videoDuration={originalVideoDuration > 0 ? originalVideoDuration : duration} // Pass detected duration
         onApplyEnhancements={async (operations) => {
           // Apply enhancements sequentially via VIA
           console.log('🤖 Applying auto-enhancements with', operations.length, 'operations')
