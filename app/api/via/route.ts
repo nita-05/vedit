@@ -2768,15 +2768,13 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
       throw new Error('Failed to get video URL for processing')
     }
     
-    // OPTIMIZATION: Check if we can use instant preview mode (Cloudinary transformations)
-    // This is much faster but has limited effect support
-    const useInstantPreview = params.instantPreview !== false && features.length <= 3
-    const canUseInstant = features.every((f: any) => 
-      f.type === 'colorGrade' || 
-      (f.type === 'applyEffect' && ['glow', 'blur', 'sharpen', 'soft focus', 'bokeh'].includes(f.preset?.toLowerCase()))
-    )
+    // NOTE: Instant preview mode (Cloudinary URL transformations) is disabled for videos
+    // Cloudinary's video transformation support via URL is very limited and unreliable
+    // We always use Render API for video processing to ensure reliability
+    // Fast encoding mode (veryfast preset) keeps processing time reasonable (15-30s)
+    const useInstantPreview = false // Disabled - Cloudinary video URL transformations are unreliable
     
-    if (useInstantPreview && canUseInstant) {
+    if (false && useInstantPreview) { // Explicitly disabled
       console.log('⚡ Using instant preview mode (Cloudinary transformations) - INSTANT results!')
       try {
         // Extract publicId from URL - need to get the actual publicId from Cloudinary URL
