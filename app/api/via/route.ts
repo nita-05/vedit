@@ -3011,7 +3011,36 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
         }
         console.log(`🔄 Sequential: Processing ${feature.type} (${feature.preset || 'default'})`)
         try {
-          const processedUrl = await videoProcessor.process(currentUrl, instruction)
+          let processedUrl: string | null = null
+          
+          // For color grades, try Cloudinary fallback first (works without FFmpeg)
+          if (feature.type === 'colorGrade') {
+            try {
+              console.log(`☁️ Trying Cloudinary fallback for color grade: ${feature.preset}`)
+              const instruction = {
+                operation: 'colorGrade',
+                params: feature,
+              }
+              processedUrl = await processWithCloudinaryFallback(
+                publicId,
+                instruction,
+                false, // isImage
+                currentUrl
+              )
+              if (processedUrl && processedUrl !== currentUrl) {
+                console.log(`✅ Sequential: Color grade via Cloudinary: ${processedUrl.substring(0, 80)}...`)
+                currentUrl = processedUrl
+                processedCount++
+                continue
+              }
+            } catch (cloudinaryError) {
+              console.warn(`⚠️ Cloudinary fallback failed, trying FFmpeg:`, cloudinaryError)
+              // Fall through to FFmpeg processing
+            }
+          }
+          
+          // Try FFmpeg processing (for effects or if Cloudinary failed)
+          processedUrl = await videoProcessor.process(currentUrl, instruction)
           if (!processedUrl || processedUrl === currentUrl) {
             console.warn(`⚠️ Sequential: ${feature.type} returned invalid or unchanged URL, skipping`)
             continue
