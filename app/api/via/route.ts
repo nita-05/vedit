@@ -2911,7 +2911,7 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
         
         console.log('✅ Instant preview generated (0-2 seconds):', finalUrl.substring(0, 100))
         // Return instant preview - user can see results immediately
-        return finalUrl
+        return { url: finalUrl, processedCount: features.length, totalCount: features.length }
       } catch (error) {
         console.warn('⚠️ Instant preview failed, falling back to Render API:', error)
         // Fall through to Render API processing
