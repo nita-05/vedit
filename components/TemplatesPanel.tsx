@@ -22,7 +22,7 @@ export default function TemplatesPanel({
   const [templates, setTemplates] = useState<EffectTemplate[]>([])
   const [categories, setCategories] = useState<string[]>([])
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [applyingTemplateId, setApplyingTemplateId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!isOpen) return
@@ -55,17 +55,20 @@ export default function TemplatesPanel({
       return
     }
 
-    setIsLoading(true)
+    // Set loading state for this specific template only
+    setApplyingTemplateId(template.id)
     try {
       // Apply template operations (now uses batch processing for speed)
       await onApplyTemplate(template.operations)
-      // Don't close immediately - let user see the processing
-      // onClose() will be called after processing completes
+      // Close panel after successful application
+      setTimeout(() => {
+        onClose()
+        setApplyingTemplateId(null)
+      }, 500)
     } catch (error: any) {
       console.error('Failed to apply template:', error)
       alert(`Failed to apply template: ${error?.message || 'Unknown error'}. Please try again.`)
-    } finally {
-      setIsLoading(false)
+      setApplyingTemplateId(null)
     }
   }
 
@@ -146,10 +149,10 @@ export default function TemplatesPanel({
               </div>
               <button
                 onClick={() => handleApplyTemplate(template)}
-                disabled={isLoading || !videoPublicId}
+                disabled={applyingTemplateId !== null || !videoPublicId}
                 className="w-full px-4 py-2 rounded-lg bg-gradient-to-r from-vedit-purple to-vedit-blue text-white font-semibold hover:scale-105 transition-transform disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                {isLoading ? 'Applying...' : 'Apply Template'}
+                {applyingTemplateId === template.id ? 'Applying...' : 'Apply Template'}
               </button>
             </motion.div>
           ))}
