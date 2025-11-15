@@ -153,8 +153,121 @@ export async function POST(request: NextRequest) {
     const isLowBitrate = parseFloat(bitrateEstimate) < 2 // Low quality video
     const isHighBitrate = parseFloat(bitrateEstimate) > 10 // High quality video
 
+    // REAL AI CONTENT ANALYSIS: Extract frames and analyze actual video content
+    let videoContentAnalysis = ''
+    try {
+      console.log('🎬 Extracting video frames for content analysis...')
+      const tempDir = getTempDir()
+      if (!fs.existsSync(tempDir)) {
+        fs.mkdirSync(tempDir, { recursive: true })
+      }
+      
+      // Download video temporarily
+      const videoResponse = await fetch(mediaUrl)
+      if (videoResponse.ok) {
+        const tempVideoPath = path.join(tempDir, `analyze_${Date.now()}.mp4`)
+        const arrayBuffer = await videoResponse.arrayBuffer()
+        fs.writeFileSync(tempVideoPath, Buffer.from(arrayBuffer))
+        
+        // Extract 3 frames (start, middle, end) for analysis
+        const framePaths: string[] = []
+        const frameTimes = duration > 0 
+          ? [Math.max(0, duration * 0.1), Math.max(0, duration * 0.5), Math.max(0, duration * 0.9)]
+          : [0, 0, 0]
+        
+        for (let i = 0; i < 3 && duration > 0; i++) {
+          const framePath = path.join(tempDir, `frame_${i}_${Date.now()}.jpg`)
+          await new Promise<void>((resolve, reject) => {
+            ffmpeg(tempVideoPath)
+              .screenshots({
+                timestamps: [frameTimes[i]],
+                filename: path.basename(framePath),
+                folder: path.dirname(framePath),
+                size: '640x360' // Smaller for faster processing
+              })
+              .on('end', () => {
+                if (fs.existsSync(framePath)) {
+                  framePaths.push(framePath)
+                }
+                resolve()
+              })
+              .on('error', (err) => {
+                console.warn(`⚠️ Could not extract frame ${i}:`, err)
+                resolve() // Continue even if frame extraction fails
+              })
+          })
+        }
+        
+        // Analyze frames with OpenAI Vision API
+        if (framePaths.length > 0) {
+          console.log(`📸 Analyzing ${framePaths.length} video frames for content...`)
+          const frameImages = framePaths.map(framePath => {
+            const imageBuffer = fs.readFileSync(framePath)
+            return {
+              type: 'image_url',
+              image_url: {
+                url: `data:image/jpeg;base64,${imageBuffer.toString('base64')}`
+              }
+            }
+          })
+          
+          const visionResponse = await openai.chat.completions.create({
+            model: 'gpt-4o',
+            messages: [
+              {
+                role: 'system',
+                content: 'You are a professional video editor analyzing video frames. Analyze the actual visual content, colors, lighting, composition, and mood. Be specific about what you see.'
+              },
+              {
+                role: 'user',
+                content: [
+                  {
+                    type: 'text',
+                    text: `Analyze these ${framePaths.length} frames extracted from a video (start, middle, end). Describe:
+1. Visual content (what's in the video - people, objects, scenes, activities)
+2. Color palette (bright, dark, muted, vibrant, warm, cool)
+3. Lighting conditions (bright, dim, natural, artificial, contrast)
+4. Overall mood/atmosphere (professional, casual, dramatic, fun, serious)
+5. Quality issues visible (noise, blur, compression artifacts, overexposure, underexposure)
+6. What enhancements would actually improve THIS specific video content
+
+Be specific and detailed. This analysis will determine which enhancements to suggest.`
+                  },
+                  ...frameImages
+                ]
+              }
+            ],
+            max_tokens: 500
+          })
+          
+          videoContentAnalysis = visionResponse.choices[0]?.message?.content || ''
+          console.log('✅ Video content analysis:', videoContentAnalysis.substring(0, 200) + '...')
+          
+          // Cleanup frames
+          framePaths.forEach(framePath => {
+            try {
+              if (fs.existsSync(framePath)) fs.unlinkSync(framePath)
+            } catch {}
+          })
+        }
+        
+        // Cleanup video
+        try {
+          if (fs.existsSync(tempVideoPath)) fs.unlinkSync(tempVideoPath)
+        } catch {}
+      }
+    } catch (contentAnalysisError) {
+      console.warn('⚠️ Video content analysis failed, using metadata only:', contentAnalysisError)
+      // Continue with metadata-only analysis
+    }
+
     // Use AI to analyze video content and suggest ONLY what's actually needed
-    const analysisPrompt = `You are a professional video editor analyzing this video. Analyze the ACTUAL metadata and suggest ONLY the enhancements that are ACTUALLY NEEDED based on the REAL video characteristics. DO NOT make assumptions - use the exact values provided.
+    const analysisPrompt = `You are a professional video editor analyzing this video. You have BOTH metadata AND actual video content analysis. Use BOTH to suggest ONLY the enhancements that are ACTUALLY NEEDED for THIS SPECIFIC VIDEO. DO NOT give generic suggestions - be specific to this video's content.
+
+${videoContentAnalysis ? `🎬 ACTUAL VIDEO CONTENT ANALYSIS:
+${videoContentAnalysis}
+
+CRITICAL: Use this content analysis to suggest enhancements that match the ACTUAL video content, not generic suggestions.` : '⚠️ Content analysis unavailable - using metadata only.'}
 
 VIDEO METADATA (EXACT VALUES):
 - Duration: ${duration} seconds ${duration === 0 ? '(⚠️ Duration not detected - analyze based on other factors)' : duration < 5 ? '(VERY SHORT)' : duration < 15 ? '(SHORT)' : duration < 60 ? '(MEDIUM)' : duration < 300 ? '(LONG)' : '(VERY LONG)'}
@@ -166,23 +279,28 @@ VIDEO METADATA (EXACT VALUES):
 
 CRITICAL: Use the EXACT duration value (${duration}s). If duration is 0, you MUST still analyze based on resolution, bitrate, and file size - but DO NOT suggest text overlays or transitions that require knowing video length.
 
-YOUR TASK: Analyze these EXACT characteristics and suggest ONLY what the video ACTUALLY NEEDS based on REAL data:
+YOUR TASK: Analyze BOTH the content analysis AND metadata to suggest ONLY what THIS SPECIFIC VIDEO needs. Different videos should get DIFFERENT suggestions based on their actual content.
 
 1. NOISE REDUCTION: Suggest if:
-   - Low bitrate (< 2 Mbps) - likely compression artifacts
-   - Low resolution (< 1280x720) - may have noise
-   - Small file size for duration - compression artifacts
+   - Content analysis mentions noise, grain, or compression artifacts
+   - Low bitrate (< 2 Mbps) AND content analysis confirms quality issues
+   - Low resolution (< 1280x720) AND visible quality problems
+   - DO NOT suggest if content analysis shows clean, high-quality footage
 
 2. SATURATION ADJUSTMENT: Suggest if:
-   - Video appears too dull (increase saturation)
-   - Video appears too vibrant (decrease saturation)
-   - Based on format and size - compressed videos often lose saturation
+   - Content analysis mentions "dull", "washed out", "muted colors" → increase saturation
+   - Content analysis mentions "oversaturated", "too vibrant" → decrease saturation
+   - Content analysis mentions "natural colors" → may need slight increase for pop
+   - DO NOT suggest if content analysis shows well-balanced colors
 
-3. COLOR GRADING: Always suggest if video needs professional look, but choose appropriate:
-   - Low quality videos: "natural tone" or "studio tone" (less aggressive)
-   - High quality videos: "cinematic", "vibrant", "moody" (more creative)
-   - Short videos: "vibrant", "bright punch" (eye-catching)
-   - Long videos: "cinematic", "moody" (professional)
+3. COLOR GRADING: Choose based on ACTUAL video content and mood:
+   - If content is "professional/business" → "studio tone" or "natural tone"
+   - If content is "dramatic/serious" → "moody" or "cinematic"
+   - If content is "fun/casual" → "vibrant" or "bright punch"
+   - If content is "retro/vintage" → "vintage" or "warm"
+   - If content is "dark/low light" → "moody" or "high contrast"
+   - If content is "bright/sunny" → "vibrant" or "golden hour"
+   - Match the color grade to the ACTUAL mood and content, not just metadata
 
 4. TRANSITIONS: Suggest ONLY if:
    - Video is long (> 30 seconds) AND duration is known (> 0) - likely has multiple scenes
@@ -194,10 +312,13 @@ YOUR TASK: Analyze these EXACT characteristics and suggest ONLY what the video A
    - Video is very long (> 2 minutes) AND duration is known (> 0) - may need chapter markers
    - DO NOT suggest if duration is 0 or unknown
 
-6. EFFECTS: Suggest ONLY if:
-   - Video needs specific mood (e.g., "dreamy glow" for romantic content)
-   - Video is low quality - "soft focus" can help
-   - Max 1-2 subtle effects
+6. EFFECTS: Suggest ONLY if content analysis indicates:
+   - "romantic/soft" content → "dreamy glow"
+   - "cinematic/dramatic" content → "film grain"
+   - "low quality/blurry" content → "soft focus"
+   - "retro/vintage" content → "film grain" or "old film"
+   - DO NOT suggest effects if content analysis shows high-quality, professional footage
+   - Max 1-2 subtle effects, only if they match the content mood
 
 7. MUSIC: Suggest ONLY if:
    - Video is > 10 seconds AND duration is known (> 0)
@@ -232,7 +353,7 @@ Return JSON format:
     "position": "top|bottom|center" (if needed)
   },
   "speed": 1.0 (optional, only if clearly needed),
-  "reasoning": "Detailed explanation of why each suggestion is needed based on video characteristics"
+  "reasoning": "Detailed explanation of why each suggestion is needed based on BOTH the actual video content analysis AND metadata. Be specific about what you saw in the video frames and how that influenced your suggestions."
 }
 
 AVAILABLE PRESETS:
