@@ -2755,12 +2755,17 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
     }
     
     // Get video URL
-    let currentUrl = inputVideoUrl
+    let currentUrl: string = inputVideoUrl || ''
     if (!currentUrl) {
       const resource = await cloudinary.api.resource(publicId, {
         resource_type: 'video',
       })
-      currentUrl = resource.secure_url
+      currentUrl = resource.secure_url || ''
+    }
+    
+    // Ensure currentUrl is defined
+    if (!currentUrl) {
+      throw new Error('Failed to get video URL for processing')
     }
     
     // OPTIMIZATION: Check if we can use instant preview mode (Cloudinary transformations)
@@ -2894,12 +2899,20 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
     
     // Fallback: Apply each feature sequentially (slower but more reliable)
     console.log('🔄 Processing features sequentially (fallback mode)')
+    if (!currentUrl) {
+      throw new Error('Current URL is not defined for sequential processing')
+    }
+    
     for (const feature of features) {
       const instruction = {
         operation: feature.type,
         params: feature,
       }
-      currentUrl = await videoProcessor.process(currentUrl, instruction)
+      const processedUrl = await videoProcessor.process(currentUrl, instruction)
+      if (!processedUrl) {
+        throw new Error(`Failed to process feature: ${feature.type}`)
+      }
+      currentUrl = processedUrl
     }
     
     return currentUrl
