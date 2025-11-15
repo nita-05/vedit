@@ -2779,66 +2779,86 @@ async function processCombinedFeatures(publicId: string, params: any, inputVideo
     if (useInstantPreview && canUseInstant) {
       console.log('⚡ Using instant preview mode (Cloudinary transformations) - INSTANT results!')
       try {
-        // Build combined Cloudinary transformation for instant preview
-        // Extract publicId from URL if needed
+        // Extract publicId from URL - need to get the actual publicId from Cloudinary URL
         let effectivePublicId = publicId
         if (currentUrl && currentUrl.includes('cloudinary.com')) {
-          const urlMatch = currentUrl.match(/\/upload\/([^\/]+\/)*([^\/\?]+)/)
-          if (urlMatch && urlMatch[2]) {
-            effectivePublicId = urlMatch[2].replace(/\.[^.]+$/, '').replace(/^vedit\//, '')
+          // Extract publicId from Cloudinary URL
+          // Format: https://res.cloudinary.com/cloud_name/resource_type/upload/version/folder/publicId.ext
+          // Example: https://res.cloudinary.com/dcgfhjxco/video/upload/v1763211694/vedit/wo6sllgs2glfr7dxymvv.mp4
+          // We need to extract: vedit/wo6sllgs2glfr7dxymvv (with folder path)
+          const uploadIndex = currentUrl.indexOf('/upload/')
+          if (uploadIndex !== -1) {
+            const afterUpload = currentUrl.substring(uploadIndex + '/upload/'.length)
+            // Remove query parameters
+            const pathWithoutQuery = afterUpload.split('?')[0]
+            // Remove version prefix if present (v123456/)
+            const pathWithoutVersion = pathWithoutQuery.replace(/^v\d+\//, '')
+            // Remove file extension but keep folder path
+            effectivePublicId = pathWithoutVersion.replace(/\.[^.]+$/, '')
+            console.log('☁️ Extracted publicId from URL:', effectivePublicId)
           }
         }
         
-        // Apply first transformation
-        let previewUrl: string | undefined = currentUrl
-        if (features[0]?.type === 'colorGrade') {
-          previewUrl = CloudinaryTransformProcessor.applyColorGrade(
-            effectivePublicId,
-            features[0].preset || 'cinematic',
-            'video'
-          )
-        } else if (features[0]?.type === 'applyEffect') {
-          previewUrl = CloudinaryTransformProcessor.applyEffect(
-            effectivePublicId,
-            features[0].preset || 'glow',
-            'video'
-          )
+        // Ensure we have a valid publicId
+        if (!effectivePublicId) {
+          throw new Error('Failed to extract publicId from video URL')
         }
         
-        // Ensure previewUrl is defined before chaining
-        if (!previewUrl) {
-          throw new Error('Failed to generate initial preview URL')
-        }
+        // Build combined transformations array for all features
+        const allTransformations: any[] = []
         
-        // Chain additional transformations by extracting publicId from previous URL
-        for (let i = 1; i < features.length; i++) {
-          const feature = features[i]
+        for (const feature of features) {
           if (feature.type === 'colorGrade') {
-            // Chain transformation
-            const newUrl = CloudinaryTransformProcessor.applyColorGrade(
-              effectivePublicId,
-              feature.preset || 'cinematic',
-              'video'
-            )
-            previewUrl = newUrl
+            const preset = feature.preset?.toLowerCase() || 'cinematic'
+            const presets: { [key: string]: any } = {
+              'warm': { brightness: 10, saturation: 30, effect: 'colorize:20:yellow' },
+              'cool': { brightness: 5, saturation: 25, effect: 'colorize:20:blue' },
+              'vintage': { effect: 'sepia:50', saturation: -20 },
+              'moody': { brightness: -20, contrast: 30, saturation: -10 },
+              'cinematic': { brightness: 5, contrast: 10, saturation: -10 },
+              'noir': { effect: 'grayscale' },
+              'natural tone': { brightness: 5, saturation: 10 },
+              'studio tone': { brightness: 10, contrast: 15, saturation: 10 },
+              'golden hour': { brightness: 15, saturation: 30, effect: 'colorize:30:gold' },
+            }
+            const presetConfig = presets[preset] || {}
+            if (presetConfig.brightness !== undefined) allTransformations.push({ brightness: presetConfig.brightness })
+            if (presetConfig.contrast !== undefined) allTransformations.push({ contrast: presetConfig.contrast })
+            if (presetConfig.saturation !== undefined) allTransformations.push({ saturation: presetConfig.saturation })
+            if (presetConfig.effect) allTransformations.push({ effect: presetConfig.effect })
           } else if (feature.type === 'applyEffect') {
-            previewUrl = CloudinaryTransformProcessor.applyEffect(
-              effectivePublicId,
-              feature.preset || 'glow',
-              'video'
-            )
-          }
-          
-          // Ensure previewUrl is still defined
-          if (!previewUrl) {
-            throw new Error(`Failed to chain transformation for feature ${i + 1}`)
+            const preset = feature.preset?.toLowerCase() || 'glow'
+            const presets: { [key: string]: any } = {
+              'blur': { effect: 'blur:300' },
+              'glow': { effect: 'art:zorro', brightness: 10, contrast: 20 },
+              'sharpen': { effect: 'sharpen:100' },
+              'soft focus': { effect: 'blur:200' },
+              'bokeh': { effect: 'blur:500' },
+            }
+            const presetConfig = presets[preset] || {}
+            if (presetConfig.effect) allTransformations.push({ effect: presetConfig.effect })
+            if (presetConfig.brightness !== undefined) allTransformations.push({ brightness: presetConfig.brightness })
+            if (presetConfig.contrast !== undefined) allTransformations.push({ contrast: presetConfig.contrast })
           }
         }
         
-        console.log('✅ Instant preview generated (0-2 seconds):', previewUrl.substring(0, 100))
+        // Generate single Cloudinary URL with all transformations combined
+        const previewUrl = cloudinary.url(effectivePublicId, {
+          resource_type: 'video',
+          secure: true,
+          transformation: allTransformations.length > 0 ? allTransformations : [],
+          fetch_format: 'auto',
+          quality: 'auto',
+        })
+        
+        // Add cache-busting
+        const cleanUrl = previewUrl.split('?')[0]
+        const timestamp = Date.now()
+        const finalUrl = `${cleanUrl}?_t=${timestamp}`
+        
+        console.log('✅ Instant preview generated (0-2 seconds):', finalUrl.substring(0, 100))
         // Return instant preview - user can see results immediately
-        // Note: This is a preview - full quality processing can happen in background if needed
-        return previewUrl
+        return finalUrl
       } catch (error) {
         console.warn('⚠️ Instant preview failed, falling back to Render API:', error)
         // Fall through to Render API processing
