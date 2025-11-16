@@ -550,6 +550,7 @@ const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
         onOpenPreview={() => setIsPreviewOpen(true)}
         onOpenTemplates={() => setIsTemplatesOpen(true)}
         onOpenAutoEnhance={() => setIsAutoEnhanceOpen(true)}
+        selectedVideoName={selectedMedia?.name}
       />
 
       {/* V-Port Modal */}

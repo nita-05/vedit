@@ -9,6 +9,7 @@ import Image from 'next/image'
 interface ActionNavbarProps {
   onFeatureClick: (command: string) => void // For auto-sending (backward compatibility)
   onFeatureToInput?: (command: string) => void // For populating chat input (new)
+  selectedVideoName?: string // For smart text generation based on current media
   onSave?: () => void
   onExport?: () => void
   onDownload?: () => void // Download current edited video
@@ -102,7 +103,7 @@ const features = [
   },
 ]
 
-export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave, onExport, onDownload, onShare, onPublish, onOpenVIAProfiles, onOpenBrandKits, onOpenPreview, onOpenTemplates, onOpenAutoEnhance }: ActionNavbarProps) {
+export default function ActionNavbar({ onFeatureClick, onFeatureToInput, selectedVideoName, onSave, onExport, onDownload, onShare, onPublish, onOpenVIAProfiles, onOpenBrandKits, onOpenPreview, onOpenTemplates, onOpenAutoEnhance }: ActionNavbarProps) {
   const { data: session } = useSession()
   const router = useRouter()
   const [imageError, setImageError] = useState(false)
@@ -276,14 +277,42 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, onSave,
     }
   }
 
-  const handleFeatureButtonClick = (feature: typeof features[0]) => {
+  const handleFeatureButtonClick = async (feature: typeof features[0]) => {
     // Generate direct, action-oriented prompts that APPLY immediately with defaults
     let command = ''
-    
+
     switch (feature.label) {
-      case 'Text':
-        command = 'Add Bold text to my video at the top position'
+      case 'Text': {
+        // Try to generate a smart title based on the current video name
+        if (onFeatureToInput) {
+          try {
+            const response = await fetch('/api/generate-text', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                videoName: selectedVideoName || 'your video',
+              }),
+            })
+
+            if (response.ok) {
+              const data = await response.json()
+              const smartTitle =
+                (data.suggestions && data.suggestions[0]) || 'Your Title Here'
+
+              command = `Add Bold text "${smartTitle}" to my video at the top position`
+            } else {
+              // Fallback to generic command if API fails
+              command = 'Add Bold text to my video at the top position'
+            }
+          } catch (error) {
+            console.error('Smart text generation failed:', error)
+            command = 'Add Bold text to my video at the top position'
+          }
+        } else {
+          command = 'Add Bold text to my video at the top position'
+        }
         break
+      }
       case 'Effects':
         command = 'Apply Glow effect to my video with medium intensity'
         break
