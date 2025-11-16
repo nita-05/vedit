@@ -86,7 +86,9 @@ Return ONLY valid JSON in this exact format:
     }
 
     const suggestions: string[] = Array.isArray(parsed.suggestions)
-      ? parsed.suggestions.filter((s) => typeof s === 'string' && s.trim().length > 0)
+      ? (parsed.suggestions as unknown[]).filter(
+          (s: unknown): s is string => typeof s === 'string' && s.trim().length > 0
+        )
       : []
 
     if (!suggestions.length) {
