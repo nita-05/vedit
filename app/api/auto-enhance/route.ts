@@ -167,16 +167,12 @@ export async function POST(request: NextRequest) {
       
       console.log(`📸 Extracting frames at: ${frameTimes.join(', ')}s`)
       
-      // Extract frames using Render API (works on Vercel)
+      // Extract frames using Render API when available, with robust Cloudinary fallback
       let frameBase64Images: string[] = []
       
-      if (RENDER_API_URL) {
-        console.log('🌐 Using Render API for frame extraction...')
-        frameBase64Images = await extractFramesWithRender(mediaUrl, frameTimes)
-      } else {
-        // Fallback: Use Cloudinary to extract frames (if Render API not available)
-        console.log('☁️ Using Cloudinary for frame extraction (Render API not configured)...')
-        frameBase64Images = await Promise.all(
+      const extractFramesViaCloudinary = async () => {
+        console.log('☁️ Using Cloudinary for frame extraction...')
+        return Promise.all(
           frameTimes.map(async (time, index) => {
             try {
               // Use Cloudinary's video frame extraction (snapshot at specific time)
@@ -205,6 +201,23 @@ export async function POST(request: NextRequest) {
             }
           })
         )
+      }
+      
+      if (RENDER_API_URL) {
+        console.log('🌐 Using Render API for frame extraction...')
+        try {
+          frameBase64Images = await extractFramesWithRender(mediaUrl, frameTimes)
+        } catch (renderError: any) {
+          // If the Render API route is missing/404 or misconfigured, fall back to Cloudinary
+          const msg = renderError?.message || ''
+          console.warn('⚠️ Render API frame extraction failed, falling back to Cloudinary:', msg)
+          
+          // Only treat this as fatal if Cloudinary also fails below
+          frameBase64Images = await extractFramesViaCloudinary()
+        }
+      } else {
+        console.log('☁️ Using Cloudinary for frame extraction (Render API not configured)...')
+        frameBase64Images = await extractFramesViaCloudinary()
       }
       
       if (frameBase64Images.length === 0) {
