@@ -204,17 +204,11 @@ export async function POST(request: NextRequest) {
       }
       
       if (RENDER_API_URL) {
-        console.log('🌐 Using Render API for frame extraction...')
-        try {
-          frameBase64Images = await extractFramesWithRender(mediaUrl, frameTimes)
-        } catch (renderError: any) {
-          // If the Render API route is missing/404 or misconfigured, fall back to Cloudinary
-          const msg = renderError?.message || ''
-          console.warn('⚠️ Render API frame extraction failed, falling back to Cloudinary:', msg)
-          
-          // Only treat this as fatal if Cloudinary also fails below
-          frameBase64Images = await extractFramesViaCloudinary()
-        }
+        console.log('🌐 Using Render API for frame extraction (strict mode - no fallback)...')
+        // In strict mode, if Render API is configured it MUST work.
+        // Any Render error will bubble up and cause auto-enhance to fail,
+        // so you know you need to fix the Render service instead of silently falling back.
+        frameBase64Images = await extractFramesWithRender(mediaUrl, frameTimes)
       } else {
         console.log('☁️ Using Cloudinary for frame extraction (Render API not configured)...')
         frameBase64Images = await extractFramesViaCloudinary()
