@@ -54,7 +54,17 @@ export default function AutoEnhancePanel({
       })
 
       if (!response.ok) {
-        throw new Error('Analysis request failed')
+        // Try to read the real backend error so you don't need DevTools Network tab
+        try {
+          const errorData = await response.json().catch(() => null)
+          const backendMessage =
+            (errorData && (errorData.message || errorData.error)) ||
+            response.statusText ||
+            'Analysis request failed'
+          throw new Error(backendMessage)
+        } catch (err: any) {
+          throw new Error(err?.message || 'Analysis request failed')
+        }
       }
 
       const data = await response.json()
@@ -79,7 +89,8 @@ export default function AutoEnhancePanel({
       }
     } catch (error: any) {
       console.error('Auto-enhance error:', error)
-      alert('Failed to analyze video')
+      const message = error?.message || 'Failed to analyze video'
+      alert(`Auto-enhance failed: ${message}`)
     } finally {
       setIsAnalyzing(false)
     }
