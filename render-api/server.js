@@ -221,6 +221,125 @@ app.post('/process', async (req, res) => {
   }
 })
 
+// Extract specific frames from a video (for OpenAI Vision analysis)
+app.post('/extract-frames', async (req, res) => {
+  try {
+    if (!ffmpegPath) {
+      return res.status(500).json({
+        success: false,
+        error: 'FFmpeg not available',
+        message: 'FFmpeg binary not found on server',
+      })
+    }
+
+    const { videoUrl, frameTimes } = req.body || {}
+
+    if (!videoUrl || !Array.isArray(frameTimes) || frameTimes.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing parameters',
+        message: 'videoUrl and frameTimes[] are required',
+      })
+    }
+
+    console.log('🎬 Extracting frames for analysis...')
+    console.log(`📼 Source video: ${videoUrl}`)
+    console.log(`⏱️ Frame times: ${frameTimes.join(', ')}s`)
+
+    const tempDir = os.tmpdir()
+    const timestamp = Date.now()
+    const inputPath = path.join(tempDir, `extract_input_${timestamp}.mp4`)
+
+    const framePaths = []
+
+    try {
+      // Download video once
+      console.log('📥 Downloading video for frame extraction...')
+      const videoResponse = await fetch(videoUrl)
+      if (!videoResponse.ok) {
+        throw new Error(`Failed to download video: ${videoResponse.statusText}`)
+      }
+      const videoBuffer = Buffer.from(await videoResponse.arrayBuffer())
+      fs.writeFileSync(inputPath, videoBuffer)
+      console.log(
+        `✅ Downloaded video for extraction: ${inputPath} (${(videoBuffer.length / 1024 / 1024).toFixed(
+          2
+        )} MB)`
+      )
+
+      // For each requested time, extract one JPEG frame
+      for (let i = 0; i < frameTimes.length; i++) {
+        const time = Math.max(0, Number(frameTimes[i]) || 0)
+        const framePath = path.join(tempDir, `frame_${timestamp}_${i}.jpg`)
+        framePaths.push(framePath)
+
+        console.log(`📸 Extracting frame ${i + 1} at ${time}s -> ${framePath}`)
+
+        // Wrap ffmpeg in a Promise so we can await it
+        await new Promise((resolve, reject) => {
+          ffmpeg(inputPath)
+            .seekInput(time)
+            .frames(1)
+            .outputOptions(['-q:v 2']) // good quality JPEG
+            .on('end', () => {
+              console.log(`✅ Frame ${i + 1} extracted`)
+              resolve()
+            })
+            .on('error', (err) => {
+              console.error(`❌ Failed to extract frame at ${time}s:`, err)
+              reject(err)
+            })
+            .save(framePath)
+        })
+      }
+
+      // Convert frames to base64 strings
+      const framesBase64 = framePaths.map((p, idx) => {
+        try {
+          const data = fs.readFileSync(p)
+          const base64 = data.toString('base64')
+          return base64
+        } catch (err) {
+          console.error(`❌ Failed to read frame file ${p}:`, err)
+          throw err
+        }
+      })
+
+      console.log(`✅ Successfully extracted ${framesBase64.length} frames`)
+
+      return res.json({
+        success: true,
+        frames: framesBase64,
+      })
+    } catch (error) {
+      console.error('❌ Frame extraction error:', error)
+      return res.status(500).json({
+        success: false,
+        error: 'Frame extraction failed',
+        message: error.message,
+      })
+    } finally {
+      // Cleanup temp files
+      try {
+        if (fs.existsSync(inputPath)) fs.unlinkSync(inputPath)
+        for (const p of framePaths) {
+          if (fs.existsSync(p)) fs.unlinkSync(p)
+        }
+        console.log('🧹 Frame extraction cleanup complete')
+      } catch (cleanupError) {
+        console.warn('⚠️ Frame extraction cleanup warning:', cleanupError.message)
+      }
+    }
+  } catch (error) {
+    console.error('❌ Frame extraction error (outer):', error)
+    return res.status(500).json({
+      success: false,
+      error: 'Frame extraction failed',
+      message: error.message,
+    })
+  }
+})
+
 // Process video function using VideoProcessor
 async function processVideo(inputPath, outputPath, instruction, publicId) {
   const processor = new VideoProcessor(ffmpegPath)
