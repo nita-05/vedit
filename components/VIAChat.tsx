@@ -165,7 +165,15 @@ export default function VIAChat({
       
       if (isEditingCommand) {
         // Video editing response
-        messageContent = data.message || 'Video editing command processed successfully!'
+        const baseMessage = data.message || 'Video editing command processed successfully!'
+
+        // If a new videoUrl is returned, the change has ALREADY been applied.
+        // Make the wording clearly past-tense so it doesn’t sound like it will apply twice.
+        if (data.videoUrl) {
+          messageContent = `✅ Done! I’ve already applied that change to your video.\n\n${baseMessage}`
+        } else {
+          messageContent = baseMessage
+        }
         if (data.analysis) {
           messageContent += `\n\n${data.analysis}`
         }
