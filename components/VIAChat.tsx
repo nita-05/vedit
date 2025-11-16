@@ -168,9 +168,11 @@ export default function VIAChat({
         const baseMessage = data.message || 'Video editing command processed successfully!'
 
         // If a new videoUrl is returned, the change has ALREADY been applied.
-        // Make the wording clearly past-tense so it doesn’t sound like it will apply twice.
+        // In that case, we ignore VIA's future-tense phrasing and replace it
+        // with a clear past-tense confirmation so it doesn’t sound like
+        // it will apply the effect again.
         if (data.videoUrl) {
-          messageContent = `✅ Done! I’ve already applied that change to your video.\n\n${baseMessage}`
+          messageContent = '✅ Done! I’ve already applied that change to your video.'
         } else {
           messageContent = baseMessage
         }
