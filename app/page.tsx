@@ -526,7 +526,7 @@ export default function LandingPage() {
         </motion.div>
       </section>
 
-      {/* Meet the Founder Section */}
+      {/* Startupathon / Program Section */}
       <section className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-20">
         <motion.div
           initial={{ opacity: 0, y: 40 }}
@@ -542,24 +542,37 @@ export default function LandingPage() {
               viewport={{ once: true }}
               className="w-32 h-32 sm:w-40 sm:h-40 rounded-full bg-gradient-to-br from-vedit-pink via-vedit-purple to-vedit-blue flex items-center justify-center text-4xl sm:text-5xl shadow-glow"
             >
-              👨‍💻
+              🚀
             </motion.div>
             <div className="flex-1 text-center md:text-left">
               <h2 className="text-2xl sm:text-3xl md:text-4xl font-bold mb-3 sm:mb-4 bg-gradient-to-r from-vedit-pink to-vedit-blue bg-clip-text text-transparent">
-                Meet the Founder – Nita Bariki
+                Welcome to StartUpathon by Persist Ventures
               </h2>
-              <p className="text-gray-300 text-sm sm:text-base md:text-lg leading-relaxed mb-4">
-                Passionate Java Developer & Innovator in AI-based Video Tech. Building the future of video editing with cutting-edge AI technology.
+              <p className="text-gray-300 text-sm sm:text-base md:text-lg leading-relaxed mb-3">
+                Your journey to becoming a Boss & CEO with 10% equity starts here—no formal qualifications needed.
+                Just passion, persistence, and ambition.
+              </p>
+              <p className="text-gray-300 text-xs sm:text-sm md:text-base leading-relaxed mb-3">
+                Guided by Jim O’Neal, founder of The Thiel Fellowship (the same program that supported builders like
+                Vitalik Buterin (Ethereum) and Dylan Field (Figma)), StartUpathon helps you turn ideas into real-world
+                success. At Persist Ventures you don’t just join a project—you step into ownership with the support,
+                tools, and network to scale your vision.
+              </p>
+              <p className="text-gray-300 text-xs sm:text-sm md:text-base leading-relaxed mb-4">
+                Alongside StartUpathon, we’re building <span className="font-semibold text-white">VEDIT</span>, an
+                AI-powered video editing platform that helps creators edit, manage, and publish content faster than
+                ever—with VIA (AI chatbot), V-Editor, V-Port, and VIA Profiles working together to deliver the most
+                intuitive AI editing experience for creators, startups, and brands.
               </p>
               <div className="flex flex-wrap justify-center md:justify-start gap-2 sm:gap-3">
                 <span className="px-3 py-1 rounded-full bg-vedit-purple/20 text-vedit-purple text-xs sm:text-sm border border-vedit-purple/30">
-                  Java Developer
+                  10% Equity Opportunity
                 </span>
                 <span className="px-3 py-1 rounded-full bg-vedit-blue/20 text-vedit-blue text-xs sm:text-sm border border-vedit-blue/30">
-                  AI Innovator
+                  Guided by Jim O’Neal
                 </span>
                 <span className="px-3 py-1 rounded-full bg-vedit-pink/20 text-vedit-pink text-xs sm:text-sm border border-vedit-pink/30">
-                  Video Tech
+                  Building VEDIT – AI Video Editing
                 </span>
               </div>
             </div>
