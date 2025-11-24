@@ -27,19 +27,32 @@ export async function POST(request: NextRequest) {
     // Try to get stored tokens from user's projects/preferences
     // In a real app, you'd store these securely per platform
     const projects = await getProjects(session.user.email)
-    const storedTokens = projects.find(p => p.projectData?.type === 'platformTokens')?.projectData?.tokens || {}
+    const tokenProject = projects.find(p => p.projectData?.type === 'platformTokens')
+    const storedTokens = tokenProject?.projectData?.tokens || {}
+    
+    // Get tokens for the specific platform (handle both direct access and nested structure)
+    const platformKey = body.platform.toLowerCase()
+    const platformTokens = storedTokens[platformKey] || storedTokens.youtube || {}
 
     // Prepare publishing config
     const publishConfig: PublishingConfig = {
       platform: body.platform.toLowerCase() as any,
-      accessToken: accessToken || storedTokens[body.platform.toLowerCase()]?.accessToken,
-      refreshToken: refreshToken || storedTokens[body.platform.toLowerCase()]?.refreshToken,
+      accessToken: accessToken || platformTokens.accessToken,
+      refreshToken: refreshToken || platformTokens.refreshToken,
       videoUrl,
       title: title || 'My Video',
       description: description || '',
       visibility: visibility || 'public',
       tags: tags || [],
     }
+    
+    console.log('🔍 Token lookup:', {
+      platform: platformKey,
+      hasTokenProject: !!tokenProject,
+      hasStoredTokens: Object.keys(storedTokens).length > 0,
+      hasAccessToken: !!publishConfig.accessToken,
+      tokenSource: accessToken ? 'provided' : (platformTokens.accessToken ? 'stored' : 'none')
+    })
 
     // Check if access token is available
     if (!publishConfig.accessToken) {

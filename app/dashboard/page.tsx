@@ -389,11 +389,14 @@ const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
         window.open(data.downloadUrl, '_blank')
         alert('Video exported successfully!')
       } else {
-        throw new Error(data.error || 'Export failed')
+        const errorMsg = data.error || data.details || 'Export failed'
+        console.error('❌ Export failed:', errorMsg, data)
+        throw new Error(errorMsg)
       }
     } catch (error) {
-      console.error('Export error:', error)
-      alert('Failed to export video: ' + (error instanceof Error ? error.message : 'Unknown error'))
+      console.error('❌ Export error:', error)
+      const errorMsg = error instanceof Error ? error.message : String(error)
+      alert(`Failed to export video: ${errorMsg}`)
     } finally {
       setIsExporting(false)
     }
