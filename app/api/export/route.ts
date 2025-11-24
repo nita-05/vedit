@@ -62,23 +62,11 @@ export async function POST(request: NextRequest) {
       published: false,
     })
   } catch (error) {
-    console.error('❌ Export error:', error)
-    const errorMessage = error instanceof Error ? error.message : String(error)
-    const errorStack = error instanceof Error ? error.stack : undefined
-    
-    // Log detailed error for debugging
-    console.error('Export error details:', {
-      message: errorMessage,
-      stack: errorStack,
-      videoUrl: body.videoUrl,
-      videoPublicId: body.videoPublicId,
-    })
-    
+    console.error('Export error:', error)
     return NextResponse.json(
       { 
-        success: false,
-        error: errorMessage || 'Failed to export video',
-        details: errorMessage
+        error: 'Failed to export video',
+        details: error instanceof Error ? error.message : 'Unknown error'
       },
       { status: 500 }
     )
