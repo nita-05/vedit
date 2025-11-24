@@ -23,6 +23,7 @@ const RENDER_API_URL = process.env.RENDER_API_URL || process.env.NEXT_PUBLIC_REN
  * Analyzes video and suggests the best feature option (Effect, Music, Color, etc.)
  */
 export async function POST(request: NextRequest) {
+  let featureType: string | undefined
   try {
     const session = await getServerSession(authOptions)
     if (!session?.user?.email) {
@@ -30,7 +31,8 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json()
-    const { videoPublicId, featureType, videoDuration } = body // featureType: 'effect' | 'music' | 'color' | 'text'
+    const { videoPublicId, featureType: ft, videoDuration } = body // featureType: 'effect' | 'music' | 'color' | 'text'
+    featureType = ft
 
     if (!videoPublicId) {
       return NextResponse.json({ error: 'Video public ID is required' }, { status: 400 })
@@ -118,7 +120,7 @@ export async function POST(request: NextRequest) {
     let analysisPrompt = ''
     let availableOptions: string[] = []
     
-    switch (featureType.toLowerCase()) {
+    switch (featureType?.toLowerCase()) {
       case 'effect':
         availableOptions = ['Blur', 'Glow', 'VHS', 'Motion', 'Film Grain', 'Lens Flare', 'Bokeh', 'Light Leak', 'Pixelate', 'Distortion', 'Chromatic Aberration', 'Shake', 'Sparkle', 'Shadow Pulse', 'Dreamy Glow', 'Glitch Flicker', 'Zoom-In Pulse', 'Soft Focus', 'Old Film', 'Dust Overlay', 'Light Rays', 'Mirror', 'Tilt Shift', 'Fisheye', 'Bloom']
         analysisPrompt = `You are a professional video editor. Analyze this video and suggest the BEST effect from the available options.
@@ -229,7 +231,7 @@ Return JSON:
         break
         
       default:
-        return NextResponse.json({ error: `Unknown feature type: ${featureType}` }, { status: 400 })
+        return NextResponse.json({ error: `Unknown feature type: ${featureType || 'undefined'}` }, { status: 400 })
     }
 
     // Get AI suggestion
