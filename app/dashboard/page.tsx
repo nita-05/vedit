@@ -551,6 +551,8 @@ const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
         onOpenTemplates={() => setIsTemplatesOpen(true)}
         onOpenAutoEnhance={() => setIsAutoEnhanceOpen(true)}
         selectedVideoName={selectedMedia?.name}
+        videoPublicId={selectedMedia?.publicId}
+        videoDuration={originalVideoDuration > 0 ? originalVideoDuration : duration}
       />
 
       {/* V-Port Modal */}
@@ -1336,6 +1338,11 @@ const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
                     />
                   )}
                 </div>
+                {/* V-Editor Label */}
+                <div className="mb-3">
+                  <h3 className="text-lg font-semibold text-white mb-1">V-Editor</h3>
+                  <p className="text-xs text-gray-400">Multi-track timeline with drag-and-drop simplicity</p>
+                </div>
                 <TimelineView 
                   videoPublicId={selectedMedia.type === 'video' ? selectedMedia.publicId : ''}
                   videoUrl={selectedMedia.type === 'video' ? selectedMedia.url : undefined}
@@ -1454,7 +1461,10 @@ const sequenceCompletionTimeoutRef = useRef<NodeJS.Timeout | null>(null)
 
         {/* Right: VIA Chat */}
         <aside className="backdrop-blur-xl bg-black/30 border border-white/10 rounded-2xl p-4 overflow-hidden shadow-glow flex flex-col">
-          <h2 className="text-xl font-semibold mb-4 text-white">VIA Chat</h2>
+          <div className="mb-4">
+            <h2 className="text-xl font-semibold mb-1 text-white">VIA Chat</h2>
+            <p className="text-xs text-gray-400">Brainstorm ideas, write scripts, edit videos with simple commands</p>
+          </div>
           <VIAChat 
             videoPublicId={selectedMedia?.publicId || ''}
             videoUrl={selectedMedia?.url}

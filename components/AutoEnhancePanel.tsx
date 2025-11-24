@@ -23,7 +23,8 @@ export default function AutoEnhancePanel({
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [suggestions, setSuggestions] = useState<any>(null)
   const [isApplying, setIsApplying] = useState(false)
-  const [autoApply, setAutoApply] = useState(false)
+  const [autoApply, setAutoApply] = useState(true) // Default to true for production - auto-apply enhancements
+  const [analysisMode, setAnalysisMode] = useState<'quick' | 'deep'>('quick') // Default to quick for instant results
 
   useEffect(() => {
     if (!isOpen) {
@@ -50,6 +51,7 @@ export default function AutoEnhancePanel({
           videoPublicId,
           autoApply,
           videoDuration, // Pass client-side detected duration if available
+          mode: analysisMode, // 'quick' for instant, 'deep' for full AI analysis
         }),
       })
 
@@ -139,9 +141,36 @@ export default function AutoEnhancePanel({
 
         {!suggestions && (
           <div className="text-center py-8">
-            <p className="text-white/60 mb-6">
-              AI will analyze your video and suggest the best enhancements automatically.
+            <p className="text-white/60 mb-4">
+              {analysisMode === 'quick' 
+                ? '⚡ Automatically analyze and apply suitable enhancements based on video characteristics.'
+                : '🤖 AI will analyze your video frames and automatically apply the best enhancements (takes longer).'}
             </p>
+            
+            {/* Analysis Mode Toggle */}
+            <div className="flex items-center justify-center gap-4 mb-6">
+              <button
+                onClick={() => setAnalysisMode('quick')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  analysisMode === 'quick'
+                    ? 'bg-vedit-blue text-white'
+                    : 'bg-white/10 text-white/60 hover:bg-white/20'
+                }`}
+              >
+                ⚡ Quick (Instant)
+              </button>
+              <button
+                onClick={() => setAnalysisMode('deep')}
+                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  analysisMode === 'deep'
+                    ? 'bg-vedit-purple text-white'
+                    : 'bg-white/10 text-white/60 hover:bg-white/20'
+                }`}
+              >
+                🤖 Deep AI Analysis
+              </button>
+            </div>
+
             <label className="flex items-center justify-center gap-3 text-sm text-white/70 mb-6">
               <input
                 type="checkbox"
@@ -149,7 +178,9 @@ export default function AutoEnhancePanel({
                 onChange={(e) => setAutoApply(e.target.checked)}
                 className="h-4 w-4 rounded border-white/40 bg-transparent text-vedit-blue focus:ring-vedit-blue"
               />
-              Auto-apply enhancements after analysis
+              <span className={autoApply ? 'text-white font-medium' : ''}>
+                Auto-apply enhancements after analysis {autoApply && '(Recommended)'}
+              </span>
             </label>
             <button
               onClick={handleAnalyze}
@@ -159,7 +190,7 @@ export default function AutoEnhancePanel({
               {isAnalyzing ? (
                 <span className="flex items-center gap-2">
                   <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  Analyzing...
+                  {analysisMode === 'quick' ? 'Analyzing...' : 'Deep analyzing...'}
                 </span>
               ) : isApplying ? (
                 <span className="flex items-center gap-2">
@@ -167,7 +198,7 @@ export default function AutoEnhancePanel({
                   Applying...
                 </span>
               ) : (
-                '🔍 Analyze Video'
+                analysisMode === 'quick' ? '⚡ Get Instant Suggestions' : '🔍 Analyze Video'
               )}
             </button>
           </div>
@@ -289,9 +320,20 @@ export default function AutoEnhancePanel({
               )}
 
               <div className="mt-4 pt-3 border-t border-white/10 text-xs text-white/40">
-                <span className="font-medium text-white/60">
-                  {suggestions.operations?.length || 0} enhancement{suggestions.operations?.length !== 1 ? 's' : ''} will be applied
-                </span>
+                <div className="flex items-center justify-between">
+                  <span className="font-medium text-white/60">
+                    {suggestions.operations?.length || 0} enhancement{suggestions.operations?.length !== 1 ? 's' : ''} will be applied
+                  </span>
+                  {suggestions.mode && (
+                    <span className={`px-2 py-1 rounded text-xs ${
+                      suggestions.mode === 'quick' 
+                        ? 'bg-vedit-blue/20 text-vedit-blue' 
+                        : 'bg-vedit-purple/20 text-vedit-purple'
+                    }`}>
+                      {suggestions.mode === 'quick' ? '⚡ Quick Mode' : '🤖 Deep AI'}
+                    </span>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -303,6 +345,22 @@ export default function AutoEnhancePanel({
               >
                 {isApplying ? 'Applying...' : '✅ Apply Enhancements'}
               </button>
+              {suggestions.mode === 'quick' && (
+                <button
+                  onClick={async () => {
+                    setSuggestions(null)
+                    setAnalysisMode('deep')
+                    // Wait a bit for state to update, then analyze
+                    setTimeout(() => {
+                      handleAnalyze()
+                    }, 100)
+                  }}
+                  disabled={isAnalyzing || isApplying}
+                  className="px-4 py-3 rounded-xl bg-vedit-purple/20 text-vedit-purple hover:bg-vedit-purple/30 transition-colors disabled:opacity-50"
+                >
+                  🤖 Deep AI Analysis
+                </button>
+              )}
               <button
                 onClick={() => {
                   setSuggestions(null)

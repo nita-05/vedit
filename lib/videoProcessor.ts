@@ -2462,6 +2462,18 @@ export class VideoProcessor {
         const satValue = value !== undefined ? value : 1.0
         filter = `eq=saturation=${satValue}`
         break
+      case 'brightness':
+        // value is multiplier: 1.0 = normal, >1.0 = brighter/lighter, <1.0 = darker
+        const brightnessValue = value !== undefined ? value : 1.0
+        // FFmpeg brightness: 0.0 = black, 1.0 = normal, >1.0 = brighter
+        filter = `eq=brightness=${brightnessValue}`
+        break
+      case 'contrast':
+        // value is multiplier: 1.0 = normal, >1.0 = more contrast, <1.0 = less contrast
+        const contrastValue = value !== undefined ? value : 1.0
+        // FFmpeg contrast: 0.0 = no contrast, 1.0 = normal, >1.0 = more contrast
+        filter = `eq=contrast=${contrastValue}`
+        break
       case 'noise':
       case 'noise reduction':
         // value is noise strength (0-100), default to 20
@@ -3258,6 +3270,166 @@ export class VideoProcessor {
       })
     } catch (error) {
       console.error('❌ Merge error:', error)
+      throw error
+    }
+  }
+
+  /**
+   * Split video into multiple time ranges and merge them into one video
+   * @param videoUrl Source video URL
+   * @param ranges Array of time ranges to extract: [{start: number, end: number}, ...]
+   * @returns URL of the merged video
+   */
+  async splitAndMergeRanges(videoUrl: string, ranges: Array<{start: number, end: number}>): Promise<string> {
+    console.log(`✂️ Splitting video into ${ranges.length} ranges and merging...`)
+    
+    if (ranges.length < 2) {
+      throw new Error('At least 2 ranges are required for split and merge')
+    }
+
+    this.ensureTempDir()
+
+    try {
+      // Download the source video
+      const sourcePath = await this.downloadVideo(videoUrl)
+      console.log(`✅ Downloaded source video: ${sourcePath}`)
+
+      // Extract each range as a separate clip
+      const clipPaths: string[] = []
+      for (let i = 0; i < ranges.length; i++) {
+        const range = ranges[i]
+        const duration = range.end - range.start
+        
+        const clipPath = isVercelOrLinux()
+          ? `${this.tempDir}/clip_${i}_${Date.now()}.mp4`
+          : path.join(this.tempDir, `clip_${i}_${Date.now()}.mp4`)
+        
+        const normalizedClipPath = isVercelOrLinux()
+          ? clipPath
+          : path.resolve(clipPath)
+        
+        console.log(`✂️ Extracting range ${i + 1}/${ranges.length}: ${range.start}s-${range.end}s (${duration}s)`)
+        
+        // Ensure FFmpeg path is set
+        this.ensureFFmpegPath()
+        
+        // Extract clip using FFmpeg
+        await new Promise<void>((resolve, reject) => {
+          ffmpeg(sourcePath)
+            .seekInput(range.start)
+            .duration(duration)
+            .outputOptions([
+              '-c:v', 'libx264',
+              '-c:a', 'aac',
+              '-preset', 'medium',
+              '-crf', '23',
+              '-movflags', '+faststart'
+            ])
+            .output(normalizedClipPath)
+            .on('start', (commandLine: string) => {
+              console.log(`🎬 FFmpeg extract command: ${commandLine}`)
+            })
+            .on('progress', (progress: any) => {
+              if (progress.percent) {
+                console.log(`⏳ Extract progress: ${Math.round(progress.percent)}%`)
+              }
+            })
+            .on('end', () => {
+              console.log(`✅ Clip ${i + 1} extracted: ${normalizedClipPath}`)
+              resolve()
+            })
+            .on('error', (err: Error) => {
+              console.error(`❌ FFmpeg extract error for clip ${i + 1}:`, err)
+              reject(err)
+            })
+            .run()
+        })
+        
+        clipPaths.push(normalizedClipPath)
+      }
+
+      // Now merge all extracted clips
+      console.log(`🔗 Merging ${clipPaths.length} extracted clips...`)
+      
+      // Create concat file for FFmpeg
+      const concatFilePath = isVercelOrLinux()
+        ? `${this.tempDir}/concat_${Date.now()}.txt`
+        : path.join(this.tempDir, `concat_${Date.now()}.txt`)
+      const concatLines = clipPaths.map(p => `file '${p.replace(/\\/g, '/')}'`).join('\n')
+      await writeFile(concatFilePath, concatLines)
+      console.log(`📝 Created concat file: ${concatFilePath}`)
+
+      // Output path for merged video
+      const outputPath = isVercelOrLinux()
+        ? `${this.tempDir}/merged_${Date.now()}.mp4`
+        : path.join(this.tempDir, `merged_${Date.now()}.mp4`)
+      const normalizedOutputPath = isVercelOrLinux()
+        ? outputPath
+        : path.resolve(outputPath)
+      
+      // Ensure output directory exists
+      const outputDir = isVercelOrLinux()
+        ? this.tempDir
+        : path.dirname(normalizedOutputPath)
+      if (!fs.existsSync(outputDir)) {
+        fs.mkdirSync(outputDir, { recursive: true })
+      }
+
+      // Merge clips using FFmpeg concat demuxer
+      return new Promise((resolve, reject) => {
+        ffmpeg()
+          .input(concatFilePath)
+          .inputOptions(['-f', 'concat', '-safe', '0'])
+          .outputOptions([
+            '-c:v', 'libx264',
+            '-c:a', 'aac',
+            '-preset', 'medium',
+            '-crf', '23',
+            '-movflags', '+faststart'
+          ])
+          .output(normalizedOutputPath)
+          .on('start', (commandLine: string) => {
+            console.log(`🎬 FFmpeg merge command: ${commandLine}`)
+          })
+          .on('progress', (progress: any) => {
+            if (progress.percent) {
+              console.log(`⏳ Merge progress: ${Math.round(progress.percent)}%`)
+            }
+          })
+          .on('end', async () => {
+            console.log(`✅ Split and merge completed: ${normalizedOutputPath}`)
+            
+            // Verify output exists
+            if (!fs.existsSync(normalizedOutputPath)) {
+              reject(new Error('Merged video file not found'))
+              return
+            }
+
+            try {
+              // Upload merged video
+              const mergedUrl = await this.uploadVideo(normalizedOutputPath, 'vedit/merged', false)
+              console.log(`☁️ Merged video uploaded: ${mergedUrl}`)
+              
+              // Cleanup
+              this.cleanup(sourcePath)
+              clipPaths.forEach(p => this.cleanup(path.resolve(p)))
+              this.cleanup(concatFilePath)
+              this.cleanup(normalizedOutputPath)
+              
+              resolve(mergedUrl)
+            } catch (uploadError) {
+              console.error('❌ Upload error:', uploadError)
+              reject(uploadError)
+            }
+          })
+          .on('error', (err: Error) => {
+            console.error('❌ FFmpeg merge error:', err)
+            reject(err)
+          })
+          .run()
+      })
+    } catch (error) {
+      console.error('❌ Split and merge error:', error)
       throw error
     }
   }

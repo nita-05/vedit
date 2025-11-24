@@ -10,6 +10,8 @@ interface ActionNavbarProps {
   onFeatureClick: (command: string) => void // For auto-sending (backward compatibility)
   onFeatureToInput?: (command: string) => void // For populating chat input (new)
   selectedVideoName?: string // For smart text generation based on current media
+  videoPublicId?: string // Video public ID for AI analysis
+  videoDuration?: number // Video duration for AI analysis
   onSave?: () => void
   onExport?: () => void
   onDownload?: () => void // Download current edited video
@@ -103,7 +105,7 @@ const features = [
   },
 ]
 
-export default function ActionNavbar({ onFeatureClick, onFeatureToInput, selectedVideoName, onSave, onExport, onDownload, onShare, onPublish, onOpenVIAProfiles, onOpenBrandKits, onOpenPreview, onOpenTemplates, onOpenAutoEnhance }: ActionNavbarProps) {
+export default function ActionNavbar({ onFeatureClick, onFeatureToInput, selectedVideoName, videoPublicId, videoDuration, onSave, onExport, onDownload, onShare, onPublish, onOpenVIAProfiles, onOpenBrandKits, onOpenPreview, onOpenTemplates, onOpenAutoEnhance }: ActionNavbarProps) {
   const { data: session } = useSession()
   const router = useRouter()
   const [imageError, setImageError] = useState(false)
@@ -278,55 +280,167 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, selecte
   }
 
   const handleFeatureButtonClick = async (feature: typeof features[0]) => {
-    // Generate direct, action-oriented prompts that APPLY immediately with defaults
+    // AI-powered feature analysis - get smart suggestions based on video content
     let command = ''
+    let isLoading = false
 
-    switch (feature.label) {
-      case 'Text': {
-        // Try to generate a smart title based on the current video name
-        if (onFeatureToInput) {
-          try {
-            const response = await fetch('/api/generate-text', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                videoName: selectedVideoName || 'your video',
-              }),
-            })
+    // Map feature labels to API feature types
+    const featureTypeMap: { [key: string]: string } = {
+      'Text': 'text',
+      'Effects': 'effect',
+      'Music': 'music',
+      'Color': 'color',
+    }
 
-            if (response.ok) {
-              const data = await response.json()
-              const smartTitle =
-                (data.suggestions && data.suggestions[0]) || 'Your Title Here'
+    const featureType = featureTypeMap[feature.label]
 
-              command = `Add Bold text "${smartTitle}" to my video at the top position`
-            } else {
-              // Fallback to generic command if API fails
-              command = 'Add Bold text to my video at the top position'
+    // If we have video info, use AI analysis
+    if (videoPublicId && featureType) {
+      try {
+        isLoading = true
+        console.log(`🤖 AI analyzing ${feature.label} for video...`)
+        
+        const response = await fetch('/api/analyze-feature', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            videoPublicId,
+            featureType,
+            videoDuration,
+          }),
+        })
+
+        if (response.ok) {
+          const data = await response.json()
+          if (data.success && data.suggestion) {
+            const suggestion = data.suggestion
+            
+            switch (feature.label) {
+              case 'Text': {
+                // Use AI text generation if available, otherwise use analyze-feature
+                try {
+                  const textResponse = await fetch('/api/generate-text', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      videoName: selectedVideoName || 'your video',
+                    }),
+                  })
+                  
+                  if (textResponse.ok) {
+                    const textData = await textResponse.json()
+                    const smartTitle = (textData.suggestions && textData.suggestions[0]) || 'Your Title Here'
+                    const style = suggestion.suggestion || 'Bold'
+                    const position = suggestion.position || 'top'
+                    command = `Add ${style} text "${smartTitle}" to my video at the ${position} position`
+                  } else {
+                    throw new Error('Text generation failed')
+                  }
+                } catch (error) {
+                  const style = suggestion.suggestion || 'Bold'
+                  const position = suggestion.position || 'top'
+                  command = `Add ${style} text to my video at the ${position} position`
+                }
+                break
+              }
+              case 'Effects': {
+                const effectName = suggestion.suggestion || 'Glow'
+                const intensity = suggestion.intensity || 0.7
+                command = `Apply ${effectName} effect to my video with ${intensity > 0.6 ? 'medium' : 'subtle'} intensity`
+                break
+              }
+              case 'Music': {
+                const musicName = suggestion.suggestion || 'Upbeat'
+                const volume = suggestion.volume || 0.4
+                command = `Add ${musicName} background music to my video at ${volume > 0.4 ? 'medium' : 'low'} volume`
+                break
+              }
+              case 'Color': {
+                const colorName = suggestion.suggestion || 'Cinematic LUT'
+                command = `Apply ${colorName} color grading to my video`
+                break
+              }
+              default:
+                command = `Add ${feature.label.toLowerCase()} to my video`
             }
-          } catch (error) {
-            console.error('Smart text generation failed:', error)
-            command = 'Add Bold text to my video at the top position'
+            
+            console.log(`✅ AI suggestion for ${feature.label}:`, suggestion)
+          } else {
+            throw new Error('No suggestion received')
           }
         } else {
-          command = 'Add Bold text to my video at the top position'
+          throw new Error('AI analysis failed')
         }
-        break
+      } catch (error) {
+        console.warn(`⚠️ AI analysis failed for ${feature.label}, using defaults:`, error)
+        // Fallback to defaults
+        switch (feature.label) {
+          case 'Text':
+            command = 'Add Bold text to my video at the top position'
+            break
+          case 'Effects':
+            command = 'Apply Glow effect to my video with medium intensity'
+            break
+          case 'Music':
+            command = 'Add Upbeat background music to my video at medium volume'
+            break
+          case 'Color':
+            command = 'Apply Cinematic LUT color grading to my video'
+            break
+          default:
+            command = `Add ${feature.label.toLowerCase()} to my video`
+        }
+      } finally {
+        isLoading = false
       }
-      case 'Effects':
-        command = 'Apply Glow effect to my video with medium intensity'
-        break
-      case 'Transitions':
-        command = 'Add Fade transition between clips in my video'
-        break
-      case 'Music':
-        command = 'Add Upbeat background music to my video at medium volume'
-        break
-      case 'Color':
-        command = 'Apply Cinematic LUT color grading to my video'
-        break
-      default:
-        command = `Add ${feature.label.toLowerCase()} to my video`
+    } else {
+      // No video info - use defaults or text generation
+      switch (feature.label) {
+        case 'Text': {
+          // Try to generate a smart title based on the current video name
+          if (onFeatureToInput) {
+            try {
+              const response = await fetch('/api/generate-text', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  videoName: selectedVideoName || 'your video',
+                }),
+              })
+
+              if (response.ok) {
+                const data = await response.json()
+                const smartTitle =
+                  (data.suggestions && data.suggestions[0]) || 'Your Title Here'
+
+                command = `Add Bold text "${smartTitle}" to my video at the top position`
+              } else {
+                command = 'Add Bold text to my video at the top position'
+              }
+            } catch (error) {
+              console.error('Smart text generation failed:', error)
+              command = 'Add Bold text to my video at the top position'
+            }
+          } else {
+            command = 'Add Bold text to my video at the top position'
+          }
+          break
+        }
+        case 'Effects':
+          command = 'Apply Glow effect to my video with medium intensity'
+          break
+        case 'Transitions':
+          command = 'Add Fade transition between clips in my video'
+          break
+        case 'Music':
+          command = 'Add Upbeat background music to my video at medium volume'
+          break
+        case 'Color':
+          command = 'Apply Cinematic LUT color grading to my video'
+          break
+        default:
+          command = `Add ${feature.label.toLowerCase()} to my video`
+      }
     }
     
     // Populate input field so user can edit and specify details
@@ -558,11 +672,16 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, selecte
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={onPublish}
-                className="px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-vedit-pink/80 via-vedit-purple/80 to-vedit-blue/80 hover:from-vedit-pink hover:via-vedit-purple hover:to-vedit-blue text-white text-xs font-semibold transition-all duration-200 shadow-glow"
-                title="Publish to Social Media"
+                className="px-2 sm:px-3 py-1.5 sm:py-2 rounded-lg bg-gradient-to-r from-vedit-pink/80 via-vedit-purple/80 to-vedit-blue/80 hover:from-vedit-pink hover:via-vedit-purple hover:to-vedit-blue text-white text-xs font-semibold transition-all duration-200 shadow-glow relative group"
+                title="V-Port - Automate publishing & scheduling"
               >
-                <span className="hidden sm:inline">🚀 Publish</span>
+                <span className="hidden sm:inline">🚀 V-Port</span>
                 <span className="sm:hidden">🚀</span>
+                {/* Tooltip */}
+                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1.5 bg-black/90 backdrop-blur-md border border-white/20 rounded-lg text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                  Automate publishing & scheduling
+                  <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 w-2 h-2 bg-black/90 border-r border-b border-white/20 rotate-45"></div>
+                </div>
               </motion.button>
             </div>
 
@@ -571,9 +690,15 @@ export default function ActionNavbar({ onFeatureClick, onFeatureToInput, selecte
               whileHover={{ scale: 1.05 }}
               whileTap={{ scale: 0.95 }}
               onClick={onPublish}
-              className="md:hidden px-3 py-2 rounded-lg bg-gradient-to-r from-vedit-pink/80 via-vedit-purple/80 to-vedit-blue/80 text-white text-xs font-semibold shadow-glow"
+              className="md:hidden px-3 py-2 rounded-lg bg-gradient-to-r from-vedit-pink/80 via-vedit-purple/80 to-vedit-blue/80 text-white text-xs font-semibold shadow-glow relative group"
+              title="V-Port - Automate publishing & scheduling"
             >
               🚀
+              {/* Tooltip */}
+              <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-1.5 bg-black/90 backdrop-blur-md border border-white/20 rounded-lg text-xs text-white whitespace-nowrap opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-50">
+                V-Port: Automate publishing & scheduling
+                <div className="absolute top-full left-1/2 transform -translate-x-1/2 -mt-1 w-2 h-2 bg-black/90 border-r border-b border-white/20 rotate-45"></div>
+              </div>
             </motion.button>
 
             {/* User Info */}

@@ -233,11 +233,33 @@ export default function VIAProfilesModal({ isOpen, onClose, onSelectProfile }: V
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-white mb-2">Voice</label>
+                  <label className="block text-sm font-medium text-white mb-2">
+                    🤖 AI Voice Options
+                  </label>
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    {availableVoices.map((voice) => (
+                      <button
+                        key={voice.id}
+                        type="button"
+                        onClick={() => setFormData({ ...formData, voice: voice.id })}
+                        className={`px-4 py-3 rounded-xl border-2 transition-all text-left ${
+                          formData.voice === voice.id
+                            ? 'bg-gradient-to-r from-vedit-purple to-vedit-blue border-vedit-purple text-white shadow-lg shadow-vedit-purple/50'
+                            : 'bg-black/30 border-white/20 text-white hover:border-vedit-purple/50 hover:bg-black/50'
+                        }`}
+                      >
+                        <div className="font-semibold text-sm">{voice.name}</div>
+                        <div className="text-xs opacity-80 mt-1">{voice.gender} • {voice.description}</div>
+                      </button>
+                    ))}
+                  </div>
+                  {/* Hidden select for form compatibility */}
                   <select
                     value={formData.voice}
                     onChange={(e) => setFormData({ ...formData, voice: e.target.value })}
-                    className="w-full px-4 py-2 rounded-xl bg-black/30 border border-white/20 text-white focus:outline-none focus:border-vedit-purple"
+                    className="sr-only"
+                    aria-hidden="true"
+                    tabIndex={-1}
                   >
                     {availableVoices.map((voice) => (
                       <option key={voice.id} value={voice.id}>
@@ -245,6 +267,9 @@ export default function VIAProfilesModal({ isOpen, onClose, onSelectProfile }: V
                       </option>
                     ))}
                   </select>
+                  <p className="text-xs text-gray-400 mt-2">
+                    💡 Select an AI voice from OpenAI TTS. All voices support natural speech generation with customizable speed.
+                  </p>
                 </div>
 
                 <div className="grid grid-cols-3 gap-4">

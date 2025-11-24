@@ -132,17 +132,20 @@ Example: "Show text 'Hello' from 2 to 5 seconds" → {"operation": "addText", "p
 
 📝 CAPTIONS/SUBTITLES (operation: "addCaptions"):
 🚨 CRITICAL RULE - NO QUESTIONS, JUST APPLY:
-When user says ANY of these: "subtitle", "subtitles", "captions", "caption", "add subtitles", "generate subtitles", "add captions", "generate captions", "speech to text", "transcribe", "create subtitles", "make captions", "auto captions", "auto subtitles", "transcribe video", "add text from audio", or ANY variation mentioning subtitles/captions - YOU MUST IMMEDIATELY return:
+When user says ANY of these: "subtitle", "subtitles", "captions", "caption", "add subtitles", "generate subtitles", "add captions", "generate captions", "speech to text", "transcribe", "create subtitles", "make captions", "auto captions", "auto subtitles", "transcribe video", "add text from audio", "generate speech-to-text subtitles", or ANY variation mentioning subtitles/captions - YOU MUST IMMEDIATELY return:
 {"operation": "addCaptions", "params": {"style": "Glow", "subtitlePosition": "bottom", "subtitleColor": "white", "subtitleSize": "medium"}}
 
 DO NOT ask questions. DO NOT ask if they have a transcript. DO NOT ask about style preferences. DO NOT say "I can help you" or "Would you like me to". JUST APPLY IT IMMEDIATELY with defaults.
 
-The system automatically transcribes video audio using OpenAI Whisper API - you don't need to ask about transcripts.
+IMPORTANT: This is SPEECH-TO-TEXT (STT) - automatically transcribes video audio using OpenAI Whisper API. This is NOT text-to-speech (TTS). For voiceover generation, use generateVoiceover operation separately.
 
-ONLY if user explicitly provides specific preferences (e.g., "yellow color", "top position", "Bold style"), then use those. Otherwise use defaults: bottom position, white color, medium size, Glow style.
+ONLY if user explicitly provides specific preferences (e.g., "yellow color", "top position", "Bold style", "Minimal style"), then use those. Otherwise use defaults: bottom position, white color, medium size, Glow style (or Minimal if user mentions it).
 
-Presets: Glow, Typewriter, Fade, Pop, Minimal, Bold, Cinematic
+PREFERRED STYLES: When user mentions "Glow or Minimal" or similar, prefer Glow as default, but if they specifically say "Minimal", use Minimal.
+
+Presets: Glow, Minimal, Typewriter, Fade, Pop, Bold, Cinematic
 NOTE: This operation only works with videos (requires audio). For images, use customText operation instead.
+NOTE: This generates subtitles from audio (speech-to-text), NOT text-to-speech voiceover.
 
 ✨ EFFECTS (operation: "applyEffect"):
 Blur, Glow, VHS, Motion, Film Grain, Lens Flare, Bokeh, Light Leak, Pixelate, Distortion, Chromatic Aberration, Shake, Sparkle, Shadow Pulse, Dreamy Glow, Glitch Flicker, Zoom-In Pulse, Soft Focus, Old Film, Dust Overlay, Light Rays, Mirror, Tilt Shift, Fisheye, Bloom
@@ -171,18 +174,34 @@ Example: "Apply cinematic color grade from 5 to 15 seconds" → {"operation": "c
 Saved Brand Presets, Custom Font Sets, Logo Overlay, Watermark, Brand Colors, Outro Template, Title Template, Intro Animation, Font Pairing, Theme Presets, Typography Sets, Default Layouts, Auto Caption Style, Font Color Presets, Saved LUTs, Signature Animation, Motion Logo, Auto Outro Builder, Font Harmony Set, Voice Style Sync
 
 OTHER OPERATIONS:
-- trim: Trim video segments (params: start, end)
+- trim: Trim/extract video segments (params: start, end)
+  * Extract a SINGLE time range from video (keep only that segment)
+  * Use this when user says "split video from X to Y" (single range only)
+  * Example: "split video from 3 to 6 seconds" → {"operation": "trim", "params": {"start": 3, "end": 6}}
+  * Example: "extract 2 to 5 seconds" → {"operation": "trim", "params": {"start": 2, "end": 5}}
+  * CRITICAL: If user says "split from X to Y" (ONE range), use "trim", NOT "splitAndMerge"
 - merge: Merge multiple clips OR different videos (params: clips[] OR videoUrls[])
   * Can merge clips from same video OR different videos
   * If merging different videos: use videoUrls: [url1, url2, ...]
   * If merging clips from same video: use clips: [{url, start, end}, ...]
+- splitAndMerge: Split video into multiple ranges and merge them (params: ranges: [{start, end}, ...])
+  * Extract MULTIPLE time ranges from the same video and merge them into one
+  * Use this ONLY when user mentions 2+ ranges with words like "and", "then merge", "combine"
+  * Example: "split 2sec-4sec and 6sec-9sec and merge" → {"operation": "splitAndMerge", "params": {"ranges": [{"start": 2, "end": 4}, {"start": 6, "end": 9}]}}
+  * Example: "extract 0-5 seconds and 10-15 seconds and combine" → {"operation": "splitAndMerge", "params": {"ranges": [{"start": 0, "end": 5}, {"start": 10, "end": 15}]}}
+  * Requires at least 2 ranges - if user gives only 1 range, use "trim" instead
 - removeClip: Remove specific clip (params: startTime, endTime)
-- filter: Apply filters like blur, sharpen, grayscale, saturation, noise reduction (params: type, value?, startTime?, endTime?)
+- filter: Apply filters like blur, sharpen, grayscale, saturation, brightness, contrast, noise reduction (params: type, value?, startTime?, endTime?)
   * ⏰ TIME-BASED: Can apply filters to specific time ranges using startTime/endTime
   * For saturation: value is a multiplier (1.2 = 20% increase, 0.8 = 20% decrease)
+  * For brightness: value is a multiplier (1.2 = 20% brighter/lighter, 0.8 = 20% darker)
+  * For contrast: value is a multiplier (1.2 = 20% more contrast, 0.8 = 20% less contrast)
   * For noise reduction: value is strength (0-100)
   * MESSAGE RULE: Keep filter messages SHORT and DIRECT - just confirm what was applied, don't ask questions or offer previews
   * Example: "increase saturation by 20%" → {"operation": "filter", "params": {"type": "saturation", "value": 1.2}, "message": "✅ Saturation increased by 20%"}
+  * Example: "make it darker" → {"operation": "filter", "params": {"type": "brightness", "value": 0.8}, "message": "✅ Brightness decreased (darker)"}
+  * Example: "make it lighter" → {"operation": "filter", "params": {"type": "brightness", "value": 1.2}, "message": "✅ Brightness increased (lighter)"}
+  * Example: "increase contrast" → {"operation": "filter", "params": {"type": "contrast", "value": 1.2}, "message": "✅ Contrast increased"}
 - analyzeVideo: Analyze video content and suggest suitable features (returns suggestions array)
 - brainstormIdeas: Brainstorm video ideas and concepts (params: topic, style, duration, targetAudience)
 - writeScript: Write video scripts (params: topic, length, style, tone, includeVisuals)
@@ -229,7 +248,7 @@ RETURN JSON FORMAT:
 
 EXAMPLES:
 User: "Add subtitles to my video" or "generate subtitle to this video"
-Response: {"message": "Perfect! Let me ask you about your subtitle preferences:\n\n1. Where should subtitles appear? (bottom, top, center)\n2. What text size? (small, medium, large, or specific number like 36)\n3. What text color? (white, yellow, red, blue, green, or any color)\n4. What style? (Glow, Typewriter, Fade, Pop, Minimal, Bold, Cinematic)\n5. Do you want a background color? (yes/no, and what color if yes)\n\nOnce you provide these details, I'll generate the subtitles with your preferred settings! 🎬"}
+Response: {"operation": "addCaptions", "params": {"style": "Glow", "subtitlePosition": "bottom", "subtitleSize": "medium", "subtitleColor": "white"}, "message": "Generating speech-to-text subtitles with Glow style..."}
 
 User: "generate subtitles with yellow color at top position large size"
 Response: {"operation": "addCaptions", "params": {"style": "Glow", "subtitleColor": "yellow", "subtitlePosition": "top", "subtitleSize": "large"}, "message": "Generating speech-to-text subtitles with yellow color, large size at top position..."}
@@ -303,6 +322,27 @@ Response: {"operation": "merge", "params": {"videoUrls": ["url1", "url2"]}, "mes
 User: "Merge clips from different videos"
 Response: {"operation": "merge", "params": {"videoUrls": ["url1", "url2", ...]}, "message": "Merging clips from different videos..."}
 
+User: "Split video from 3 to 6 seconds" or "split video from 3-6second"
+Response: {"operation": "trim", "params": {"start": 3, "end": 6}, "message": "Extracting video segment from 3s to 6s..."}
+
+User: "Extract 2 to 5 seconds"
+Response: {"operation": "trim", "params": {"start": 2, "end": 5}, "message": "Extracting video segment from 2s to 5s..."}
+
+User: "Split video from 3 to 6 seconds" or "split video from 3-6second"
+Response: {"operation": "trim", "params": {"start": 3, "end": 6}, "message": "Extracting video segment from 3s to 6s..."}
+
+User: "Extract 2 to 5 seconds"
+Response: {"operation": "trim", "params": {"start": 2, "end": 5}, "message": "Extracting video segment from 2s to 5s..."}
+
+User: "Split video from 2sec to 4sec and 6sec to 9sec and merge them"
+Response: {"operation": "splitAndMerge", "params": {"ranges": [{"start": 2, "end": 4}, {"start": 6, "end": 9}]}, "message": "Splitting video into 2 ranges (2-4s and 6-9s) and merging them..."}
+
+User: "Extract 0-5 seconds and 10-15 seconds and combine"
+Response: {"operation": "splitAndMerge", "params": {"ranges": [{"start": 0, "end": 5}, {"start": 10, "end": 15}]}, "message": "Extracting 2 ranges (0-5s and 10-15s) and merging them..."}
+
+User: "Split video at 2-4sec, 6-9sec, and 12-15sec then merge"
+Response: {"operation": "splitAndMerge", "params": {"ranges": [{"start": 2, "end": 4}, {"start": 6, "end": 9}, {"start": 12, "end": 15}]}, "message": "Splitting video into 3 ranges and merging them..."}
+
 User: "Add cinematic fade transition between clips"
 Response: {"operation": "addTransition", "params": {"preset": "Fade", "duration": 1.0}, "message": "Adding cinematic fade transition..."}
 
@@ -347,6 +387,9 @@ Response: {"operation": "applyEffect", "params": {"preset": "Blur", "intensity":
 
 User: "Generate speech-to-text subtitles with Glow or Minimal style"
 Response: {"operation": "addCaptions", "params": {"style": "Glow", "subtitlePosition": "bottom", "subtitleSize": "medium", "subtitleColor": "white"}, "message": "Generating speech-to-text subtitles with Glow style..."}
+
+User: "Generate speech-to-text subtitles with Minimal style"
+Response: {"operation": "addCaptions", "params": {"style": "Minimal", "subtitlePosition": "bottom", "subtitleSize": "medium", "subtitleColor": "white"}, "message": "Generating speech-to-text subtitles with Minimal style..."}
 
 User: "Add Fade, Cross Dissolve, or Slide transitions"
 Response: {"operation": "addTransition", "params": {"preset": "Fade", "duration": 1.0}, "message": "Adding Fade transition between clips..."}
@@ -560,6 +603,11 @@ QUERY UNDERSTANDING - BE FLEXIBLE AND INTELLIGENT:
 - "cut out X seconds" = "removeClip with appropriate time range"
 - "merge these clips" = "merge operation"
 - "combine videos" = "merge operation with videoUrls"
+- "split video from X to Y" (single range) = "trim with start: X, end: Y" (extract single segment)
+- "extract X to Y seconds" (single range) = "trim with start: X, end: Y" (extract single segment)
+- "split video from X to Y and A to B and merge" (multiple ranges) = "splitAndMerge with ranges: [{start: X, end: Y}, {start: A, end: B}]"
+- "extract X-Y seconds and A-B seconds and combine" (multiple ranges) = "splitAndMerge with ranges: [{start: X, end: Y}, {start: A, end: B}]"
+- "split at X-Y, A-B, C-D then merge" (multiple ranges) = "splitAndMerge with ranges: [{start: X, end: Y}, {start: A, end: B}, {start: C, end: D}]"
 - "apply template" = Process multiple operations from template
 - "auto enhance" = Apply suggested enhancements based on video analysis
 - "analyze" = "analyzeVideo operation" (IMMEDIATE - no questions)
@@ -1014,6 +1062,50 @@ export async function POST(request: NextRequest) {
       const processor = new VideoProcessor()
       processedUrl = await processor.mergeClips(clipUrls)
       console.log('✅ Merge completed successfully:', processedUrl)
+    } else if (instruction.operation === 'splitAndMerge') {
+      console.log('✂️ Starting split and merge operation...')
+      const { ranges } = instruction.params
+      
+      if (!ranges || !Array.isArray(ranges) || ranges.length < 2) {
+        return NextResponse.json({
+          error: 'splitAndMerge requires at least 2 ranges',
+          message: 'Please provide at least 2 time ranges to split and merge. Example: "split 2sec-4sec and 6sec-9sec and merge"'
+        }, { status: 400 })
+      }
+      
+      // Validate ranges
+      for (const range of ranges) {
+        if (typeof range.start !== 'number' || typeof range.end !== 'number') {
+          return NextResponse.json({
+            error: 'Invalid range format',
+            message: 'Each range must have start and end times in seconds. Example: {"start": 2, "end": 4}'
+          }, { status: 400 })
+        }
+        if (range.start < 0 || range.end <= range.start) {
+          return NextResponse.json({
+            error: 'Invalid time range',
+            message: `Range ${range.start}-${range.end} is invalid. Start must be >= 0 and end must be > start.`
+          }, { status: 400 })
+        }
+      }
+      
+      // Get video URL
+      if (!inputVideoUrl) {
+        return NextResponse.json({
+          error: 'Video URL required',
+          message: 'Please ensure a video is uploaded before splitting and merging.'
+        }, { status: 400 })
+      }
+      
+      console.log(`✂️ Splitting video into ${ranges.length} ranges:`, ranges)
+      
+      // Use VideoProcessor to split and merge
+      const { VideoProcessor } = await import('@/lib/videoProcessor')
+      const processor = new VideoProcessor()
+      
+      // Split each range and merge them
+      processedUrl = await processor.splitAndMergeRanges(inputVideoUrl, ranges)
+      console.log('✅ Split and merge completed successfully:', processedUrl)
     } else {
       // Process the video/image editing instruction
       // PRIORITY 1: Try Render API if available (for FFmpeg operations)
@@ -1028,6 +1120,7 @@ export async function POST(request: NextRequest) {
       const needsFFmpeg = [
         'addMusic', 
         'merge', 
+        'splitAndMerge',
         'trim', 
         'removeClip', 
         'addTransition', 
@@ -2051,10 +2144,30 @@ async function processWithCloudinaryFallback(
           secure: true,
           transformation: [{ saturation }],
         })
+      } else if (filterType === 'brightness') {
+        const brightnessValue = params.value || 1.0
+        // Cloudinary brightness: -100 to +100, where 0 is normal
+        // Our value: 1.0 = normal, >1.0 = brighter, <1.0 = darker
+        const brightness = Math.round((brightnessValue - 1) * 100)
+        filterUrl = cloudinary.url(effectivePublicId, {
+          resource_type: resourceType,
+          secure: true,
+          transformation: [{ brightness }],
+        })
+      } else if (filterType === 'contrast') {
+        const contrastValue = params.value || 1.0
+        // Cloudinary contrast: -100 to +100, where 0 is normal
+        // Our value: 1.0 = normal, >1.0 = more contrast, <1.0 = less contrast
+        const contrast = Math.round((contrastValue - 1) * 100)
+        filterUrl = cloudinary.url(effectivePublicId, {
+          resource_type: resourceType,
+          secure: true,
+          transformation: [{ contrast }],
+        })
       } else {
         // Unknown filter type - throw error instead of returning original
         console.error(`❌ Unknown filter type: ${params.type}`)
-        throw new Error(`Filter type "${params.type}" is not supported. Supported types: saturation, noise reduction.`)
+        throw new Error(`Filter type "${params.type}" is not supported. Supported types: saturation, brightness, contrast, noise reduction.`)
       }
       
       console.log(`☁️ Filter URL generated: ${filterUrl}`)
@@ -2333,7 +2446,7 @@ async function analyzeVideoContent(publicId: string, isImage: boolean = false): 
       { 
         category: 'Captions', 
         recommendation: 'Generate speech-to-text subtitles with Glow or Minimal style',
-        reason: 'Improves accessibility and engagement'
+        reason: 'Improves accessibility and engagement. Automatically transcribes video audio using Whisper API (speech-to-text).'
       },
     ]
     

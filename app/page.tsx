@@ -52,22 +52,22 @@ export default function LandingPage() {
     {
       icon: '✨',
       title: 'VIA (AI Chatbot)',
-      description: 'Edit with natural prompts or voice',
+      description: 'Brainstorm ideas, write scripts, edit videos with simple commands',
     },
     {
       icon: '🎞️',
       title: 'V-Editor',
-      description: 'Auto-timeline editing, trimming, merging',
+      description: 'Multi-track editing timeline with drag-and-drop simplicity',
     },
     {
       icon: '🚀',
       title: 'V-Port',
-      description: 'Auto-publish to YouTube, Instagram, TikTok, LinkedIn, X',
+      description: 'Automate publishing & scheduling across YouTube, TikTok, Instagram, LinkedIn, X, and more',
     },
     {
       icon: '🗣️',
       title: 'VIA Profiles',
-      description: 'Generate real AI voiceovers',
+      description: 'AI-generated voice clones for personalized voiceovers',
     },
   ]
 
@@ -179,15 +179,23 @@ export default function LandingPage() {
           transition={{ duration: 1, delay: 0.2 }}
           className="text-lg sm:text-xl md:text-2xl mb-6 sm:mb-8 max-w-3xl text-gray-200"
         >
-          The most cinematic AI video editor powered by VIA
+          The most intuitive AI video editor powered by VIA
         </motion.p>
         <motion.p
           initial={{ opacity: 0, y: 40 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 1, delay: 0.4 }}
-          className="text-base sm:text-lg md:text-xl mb-8 sm:mb-12 max-w-2xl text-gray-300"
+          className="text-base sm:text-lg md:text-xl mb-4 sm:mb-6 max-w-2xl text-gray-300"
         >
-          AI-powered editing for creators, startups, and brands. Edit, manage, and publish your videos in seconds.
+          AI-powered editing for creators, startups, and brands. Edit, manage, and publish your videos faster than ever.
+        </motion.p>
+        <motion.p
+          initial={{ opacity: 0, y: 40 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 1, delay: 0.5 }}
+          className="text-sm sm:text-base mb-8 sm:mb-12 max-w-2xl text-vedit-purple/80 font-medium"
+        >
+          🚀 Rebuilding from the ground up • Built by Persist Ventures
         </motion.p>
         
         {/* CTA Buttons */}
@@ -599,6 +607,66 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* Persist Ventures Vision Section */}
+      <section className="relative z-10 w-full max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-20">
+        <motion.div
+          initial={{ opacity: 0, y: 40 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.8 }}
+          className="backdrop-blur-xl bg-gradient-to-br from-vedit-purple/20 via-black/60 to-vedit-blue/20 border border-white/20 rounded-3xl p-8 sm:p-12 shadow-2xl"
+        >
+          <div className="text-center mb-8">
+            <motion.h2
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              className="text-3xl sm:text-4xl md:text-5xl font-bold mb-4 bg-gradient-to-r from-vedit-pink via-vedit-purple to-vedit-blue bg-clip-text text-transparent"
+            >
+              Built by Persist Ventures
+            </motion.h2>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.2 }}
+              className="text-lg sm:text-xl text-gray-300 mb-6 max-w-3xl mx-auto"
+            >
+              Your journey to becoming a Boss & CEO with 10% equity starts here
+            </motion.p>
+            <motion.p
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.3 }}
+              className="text-base sm:text-lg text-gray-400 max-w-2xl mx-auto mb-8"
+            >
+              No formal qualifications needed. Just passion, persistence, and ambition. Guided by Jim O'Neal, founder of The Thiel Fellowship, the same program that supported visionaries like Vitalik Buterin (Ethereum) and Dylan Field (Figma).
+            </motion.p>
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.4 }}
+              className="flex flex-col sm:flex-row gap-4 justify-center items-center"
+            >
+              <div className="px-6 py-3 rounded-xl bg-white/10 border border-white/20 text-white">
+                <div className="text-2xl font-bold">StartUpathon</div>
+                <div className="text-sm text-gray-400">Turn persistence into success</div>
+              </div>
+              <div className="px-6 py-3 rounded-xl bg-white/10 border border-white/20 text-white">
+                <div className="text-2xl font-bold">10% Equity</div>
+                <div className="text-sm text-gray-400">Ownership from day one</div>
+              </div>
+              <div className="px-6 py-3 rounded-xl bg-white/10 border border-white/20 text-white">
+                <div className="text-2xl font-bold">World-Class</div>
+                <div className="text-sm text-gray-400">Mentorship & networks</div>
+              </div>
+            </motion.div>
+          </div>
+        </motion.div>
+      </section>
+
       {/* Enhanced Footer */}
       <footer className="relative z-10 w-full border-t border-white/10 bg-black/40 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 py-8 sm:py-12">
@@ -608,7 +676,7 @@ export default function LandingPage() {
                 About VEDIT
               </h3>
               <p className="text-gray-400 text-xs sm:text-sm leading-relaxed">
-                The most cinematic AI video editor powered by VIA. Edit, manage, and publish your videos in seconds.
+                The most intuitive AI video editor powered by VIA. Edit, manage, and publish your videos faster than ever.
               </p>
             </div>
             <div>
@@ -622,9 +690,12 @@ export default function LandingPage() {
               </a>
             </div>
             <div>
-              <h3 className="text-lg sm:text-xl font-bold mb-3 sm:mb-4 text-white">Powered By</h3>
-              <p className="text-gray-400 text-xs sm:text-sm">
-                AI
+              <h3 className="text-lg sm:text-xl font-bold mb-3 sm:mb-4 text-white">Built By</h3>
+              <p className="text-gray-400 text-xs sm:text-sm mb-2">
+                <span className="font-semibold text-vedit-purple">Persist Ventures</span>
+              </p>
+              <p className="text-gray-500 text-xs">
+                StartUpathon • Mentorship • Equity
               </p>
             </div>
           </div>
@@ -635,7 +706,7 @@ export default function LandingPage() {
               viewport={{ once: true }}
               className="text-xs sm:text-sm text-gray-400"
             >
-              © 2025 VEDIT – Powered by AI
+              © 2025 VEDIT – Built by Persist Ventures • Powered by AI
             </motion.p>
           </div>
         </div>
