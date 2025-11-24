@@ -2,15 +2,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { authOptions } from '@/lib/auth'
 import { v2 as cloudinary } from 'cloudinary'
-import { VideoProcessor } from '@/lib/videoProcessor'
 
 cloudinary.config({
   cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
   api_key: process.env.CLOUDINARY_API_KEY,
   api_secret: process.env.CLOUDINARY_API_SECRET,
 })
-
-const videoProcessor = new VideoProcessor()
 
 export async function POST(request: NextRequest) {
   try {
@@ -44,8 +41,20 @@ export async function POST(request: NextRequest) {
 
     console.log('📤 Export: Using video URL:', finalVideoUrl)
 
-    // Export video using FFmpeg server-side (use the edited video URL)
-    const exportedUrl = await videoProcessor.exportVideo(finalVideoUrl, format, quality)
+    // Export video using Cloudinary transformation (no FFmpeg needed for format/quality changes)
+    // Cloudinary can handle format conversion and quality adjustments without FFmpeg
+    console.log('☁️ Using Cloudinary for video export...')
+    const resource = await cloudinary.uploader.upload(finalVideoUrl, {
+      resource_type: 'video',
+      folder: 'vedit/exports',
+      format: format,
+      quality: quality === 'high' ? 'auto:best' : quality === 'medium' ? 'auto:good' : 'auto:low',
+      eager: [{
+        format: format,
+        quality: quality === 'high' ? 'auto:best' : quality === 'medium' ? 'auto:good' : 'auto:low',
+      }],
+    })
+    const exportedUrl = resource.secure_url
 
     // Generate share URL (use publicId if available, otherwise generate from URL)
     const shareId = videoPublicId || finalVideoUrl.split('/').pop()?.split('.')[0] || 'exported'

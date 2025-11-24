@@ -2838,6 +2838,12 @@ export class VideoProcessor {
     format = 'mp4',
     quality = 'high'
   ): Promise<string> {
+    // Ensure FFmpeg path is set before using it
+    this.ensureFFmpegPath()
+    
+    // Verify FFmpeg is available
+    await this.checkFFmpegAvailability()
+    
     const inputPath = await this.downloadVideo(videoUrl)
     const outputPath = isVercelOrLinux()
       ? `${this.tempDir}/export_${Date.now()}.${format}`
