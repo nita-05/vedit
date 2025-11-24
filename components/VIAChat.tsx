@@ -87,6 +87,7 @@ export default function VIAChat({
   const [isListening, setIsListening] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [isTyping, setIsTyping] = useState(false)
+  const [isVoiceSupported, setIsVoiceSupported] = useState(false)
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const recognitionRef = useRef<any>(null)
   const handleSendRef = useRef<((messageText?: string) => Promise<void>) | null>(null)
@@ -273,6 +274,7 @@ export default function VIAChat({
     if (typeof window !== 'undefined' && ('webkitSpeechRecognition' in window || 'SpeechRecognition' in window)) {
       const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition
       if (SpeechRecognition) {
+        setIsVoiceSupported(true)
         recognitionRef.current = new SpeechRecognition()
         recognitionRef.current.continuous = false
         recognitionRef.current.interimResults = true
@@ -315,7 +317,11 @@ export default function VIAChat({
         recognitionRef.current.onend = () => {
           setIsListening(false)
         }
+      } else {
+        setIsVoiceSupported(false)
       }
+    } else {
+      setIsVoiceSupported(false)
     }
   }, [])
 
@@ -497,7 +503,7 @@ export default function VIAChat({
                 🗑️ Clear
               </button>
             )}
-            {!recognitionRef.current && (
+            {!isVoiceSupported && (
               <span className="text-yellow-400/80 text-xs hidden sm:inline">⚠️ Voice: Chrome/Edge</span>
             )}
           </div>
