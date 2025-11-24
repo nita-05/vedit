@@ -25,43 +25,98 @@ export async function POST(request: NextRequest) {
     }
 
     // Try to get stored tokens from user's projects/preferences
-    // In a real app, you'd store these securely per platform
     const projects = await getProjects(session.user.email)
     const tokenProject = projects.find(p => p.projectData?.type === 'platformTokens')
     const storedTokens = tokenProject?.projectData?.tokens || {}
     
-    // Get tokens for the specific platform (handle both direct access and nested structure)
+    // Debug logging for token lookup
     const platformKey = body.platform.toLowerCase()
-    const platformTokens = storedTokens[platformKey] || storedTokens.youtube || {}
+    console.log('🔍 Token lookup:', {
+      platform: platformKey,
+      hasTokenProject: !!tokenProject,
+      hasStoredTokens: Object.keys(storedTokens).length > 0,
+      storedTokenKeys: Object.keys(storedTokens),
+      hasAccessToken: !!storedTokens[platformKey]?.accessToken,
+      tokenSource: accessToken ? 'request' : (storedTokens[platformKey]?.accessToken ? 'stored' : 'none'),
+    })
 
     // Prepare publishing config
     const publishConfig: PublishingConfig = {
-      platform: body.platform.toLowerCase() as any,
-      accessToken: accessToken || platformTokens.accessToken,
-      refreshToken: refreshToken || platformTokens.refreshToken,
+      platform: platformKey as any,
+      accessToken: accessToken || storedTokens[platformKey]?.accessToken,
+      refreshToken: refreshToken || storedTokens[platformKey]?.refreshToken,
       videoUrl,
       title: title || 'My Video',
       description: description || '',
       visibility: visibility || 'public',
       tags: tags || [],
     }
-    
-    console.log('🔍 Token lookup:', {
-      platform: platformKey,
-      hasTokenProject: !!tokenProject,
-      hasStoredTokens: Object.keys(storedTokens).length > 0,
-      hasAccessToken: !!publishConfig.accessToken,
-      tokenSource: accessToken ? 'provided' : (platformTokens.accessToken ? 'stored' : 'none')
-    })
 
     // Check if access token is available
     if (!publishConfig.accessToken) {
+      console.log('❌ No access token found for platform:', platformKey)
       return NextResponse.json({
         success: false,
         requiresAuth: true,
         message: `Please connect your ${body.platform} account first. Click "Connect Account" to authorize.`,
-        oauthUrl: getOAuthUrl(body.platform.toLowerCase()),
+        oauthUrl: getOAuthUrl(platformKey),
       })
+    }
+
+    // Check if token is expired and refresh if needed (for YouTube)
+    if (platformKey === 'youtube' && publishConfig.refreshToken) {
+      const tokenData = storedTokens[platformKey]
+      if (tokenData?.expiresAt) {
+        const expiresAt = new Date(tokenData.expiresAt)
+        const now = new Date()
+        // Refresh if token expires in less than 5 minutes
+        if (expiresAt.getTime() - now.getTime() < 5 * 60 * 1000) {
+          console.log('🔄 Refreshing expired YouTube token...')
+          try {
+            const refreshResponse = await fetch('https://oauth2.googleapis.com/token', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/x-www-form-urlencoded',
+              },
+              body: new URLSearchParams({
+                client_id: process.env.GOOGLE_CLIENT_ID || '',
+                client_secret: process.env.GOOGLE_CLIENT_SECRET || '',
+                refresh_token: publishConfig.refreshToken,
+                grant_type: 'refresh_token',
+              }),
+            })
+            
+            if (refreshResponse.ok) {
+              const refreshData = await refreshResponse.json()
+              publishConfig.accessToken = refreshData.access_token
+              
+              // Update stored token
+              if (tokenProject) {
+                await updateProject(tokenProject.id || '', {
+                  projectData: {
+                    type: 'platformTokens',
+                    tokens: {
+                      ...storedTokens,
+                      [platformKey]: {
+                        ...tokenData,
+                        accessToken: refreshData.access_token,
+                        expiresAt: new Date(Date.now() + (refreshData.expires_in * 1000)).toISOString(),
+                      },
+                    },
+                  },
+                  updatedAt: new Date(),
+                })
+                console.log('✅ Token refreshed and saved')
+              }
+            } else {
+              console.warn('⚠️ Token refresh failed, using existing token')
+            }
+          } catch (refreshError) {
+            console.error('❌ Token refresh error:', refreshError)
+            // Continue with existing token - might still work
+          }
+        }
+      }
     }
 
     // Attempt to publish using real APIs
